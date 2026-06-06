@@ -1,5 +1,5 @@
 To run the project:
-```bash cargo run```
+`cargo run`
 <br>
 To build the project:
-```bash cargo packager --release```
+`bash cargo packager --release`
