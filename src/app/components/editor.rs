@@ -19,16 +19,6 @@ impl NotepadApp {
                 if self.preview_open {
                     ui.allocate_ui(egui::vec2(max_width, ui.available_height()), |ui| {
                         ui.add_space(2.0);
-                        let mut style = (*ctx.style()).clone();
-
-                        style.override_text_style = Some(egui::TextStyle::Monospace);
-
-                        for (_text_style, font_id) in style.text_styles.iter_mut() {
-                            *font_id = egui::FontId::monospace(14.0);
-                        }
-
-                        ctx.set_style(style);
-
                         let mut processed_content = String::new();
                         for line in self.content.lines() {
                             processed_content.push_str(line);
@@ -52,7 +42,6 @@ impl NotepadApp {
                                 string,
                                 0.0,
                                 egui::text::TextFormat {
-                                    font_id: egui::FontId::monospace(14.0),
                                     color: ui.visuals().widgets.noninteractive.text_color(),
                                     line_height: Some(18.0),
                                     ..Default::default()

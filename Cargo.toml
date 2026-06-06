@@ -2,8 +2,34 @@
 name = "rust_notepad"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 eframe = "0.27"
 rfd = "0.14"
 egui_commonmark = "0.14"
+
+[build-dependencies]
+winresource = "0.1"
+
+[package.metadata.packager]
+product_name = "Rusty Notepad"
+identifier = "com.rustynotepad.app"
+version = "0.1.0"
+description = "A lightweight Markdown text editor built in Rust."
+authors = ["fogeL"]
+
+before_packaging_command = "cargo build --release"
+
+icons = [
+    "assets/icon.ico",
+    "assets/icon.png"
+]
+formats = ["nsis"]
+
+[package.metadata.packager.macos]
+minimum_system_version = "10.13"
+
+[package.metadata.packager.deb]
+priority = "optional"

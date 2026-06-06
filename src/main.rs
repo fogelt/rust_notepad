@@ -13,10 +13,30 @@ fn main() -> eframe::Result<()> {
         None
     };
 
+    let icon_bytes = include_bytes!("../assets/icon.png");
+    let icon_data = if let Ok(image) = image::load_from_memory(icon_bytes) {
+        let image = image.to_rgba8();
+        let (width, height) = image.dimensions();
+        Some(egui::IconData {
+            rgba: image.into_raw(),
+            width,
+            height,
+        })
+    } else {
+        None
+    };
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([800.0, 600.0])
+        .with_title("Rusty Notepad");
+
+    if let Some(icon) = icon_data {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([800.0, 600.0])
-            .with_title("Rusty Notepad"),
+        viewport,
+        centered: true, // This field lives on NativeOptions to manage window initialization placement
         ..Default::default()
     };
 
