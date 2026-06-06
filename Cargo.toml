@@ -26,10 +26,11 @@ icons = [
     "assets/icon.ico",
     "assets/icon.png"
 ]
-formats = ["nsis"]
+formats = ["nsis", "deb", "appimage"]
 
 [package.metadata.packager.macos]
 minimum_system_version = "10.13"
 
 [package.metadata.packager.deb]
 priority = "optional"
+section = "editors"
