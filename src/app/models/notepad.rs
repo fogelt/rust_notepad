@@ -5,7 +5,6 @@ pub struct NotepadApp {
     pub content: String,
     pub file_path: Option<PathBuf>,
     pub status_message: String,
-    pub preview_open: bool,
     pub markdown_cache: CommonMarkCache,
 }
 
@@ -36,7 +35,6 @@ impl Default for NotepadApp {
             content: String::new(),
             file_path: None,
             status_message: String::from("Ready"),
-            preview_open: false,
             markdown_cache: CommonMarkCache::default(),
         }
     }

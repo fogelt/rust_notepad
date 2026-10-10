@@ -8,7 +8,6 @@ impl NotepadApp {
         let mut action_new = false;
         let mut action_open = false;
         let mut action_save = false;
-        let mut action_toggle = false;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::Frame::none()
@@ -29,30 +28,9 @@ impl NotepadApp {
                                 ui.close_menu();
                             }
                         });
-
-                        ui.separator();
-
-                        let toggle_text = if self.preview_open {
-                            "Edit Mode"
-                        } else {
-                            "Preview Mode"
-                        };
-
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            if ui
-                                .selectable_label(self.preview_open, toggle_text)
-                                .clicked()
-                            {
-                                action_toggle = true;
-                            }
-                        });
                     });
                 });
         });
-
-        if action_toggle {
-            self.preview_open = !self.preview_open;
-        }
 
         if action_new {
             self.content.clear();

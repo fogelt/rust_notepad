@@ -5,19 +5,19 @@ use std::fs;
 
 impl NotepadApp {
     pub fn show_editor(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let visuals = ui.visuals_mut();
-            visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
-            visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
-            visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
-            visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-            visuals.selection.stroke = egui::Stroke::NONE;
-
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let max_width = ui.available_width();
-
-                if self.preview_open {
-                    ui.allocate_ui(egui::vec2(max_width, ui.available_height()), |ui| {
+        // Live preview is always enabled as a resizable right-hand panel.
+        let avail_w = ctx.available_rect().width();
+        let default_w = if avail_w > 0.0 { avail_w * 0.5 } else { 400.0 };
+        egui::SidePanel::right("preview_panel")
+            .resizable(true)
+            .default_width(default_w)
+            .min_width(200.0)
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("Preview").strong());
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
                         ui.add_space(2.0);
                         let mut processed_content = String::new();
                         for line in self.content.lines() {
@@ -31,8 +31,26 @@ impl NotepadApp {
                             &processed_content,
                         );
                     });
-                } else {
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label(egui::RichText::new("Editor").strong());
+            ui.separator();
+
+            let visuals = ui.visuals_mut();
+            visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+            visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
+            visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
+            visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+            visuals.selection.stroke = egui::Stroke::NONE;
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    let max_width = ui.available_width();
+
                     let response = egui::TextEdit::multiline(&mut self.content)
+                        .id(egui::Id::new("editor_text"))
                         .hint_text("Write text here...")
                         .frame(false)
                         .desired_width(max_width)
@@ -65,8 +83,7 @@ impl NotepadApp {
                                 String::from("Unsaved changes (Save file to enable autosave).");
                         }
                     }
-                }
-            });
+                });
         });
     }
 }
