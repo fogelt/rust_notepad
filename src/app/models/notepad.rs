@@ -60,6 +60,17 @@ impl NotepadApp {
                     file_path: Some(p),
                     ..Default::default()
                 },
+                // A missing file means "new note at this path": keep the path
+                // so the first Save writes where the user asked (e.g. `rmd notes.md`).
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self {
+                    content: String::new(),
+                    status_message: format!(
+                        "New file: {:?} (Save to create it)",
+                        p.file_name().unwrap_or(p.as_os_str())
+                    ),
+                    file_path: Some(p),
+                    ..Default::default()
+                },
                 Err(e) => Self {
                     status_message: format!("Failed to auto-load file: {}", e),
                     ..Default::default()
@@ -110,5 +121,27 @@ mod tests {
         assert!(app.tabs.editor);
         assert!(app.tabs.preview);
         assert!(!app.tabs.assistant);
+    }
+
+    #[test]
+    fn missing_file_becomes_new_buffer_at_that_path() {
+        let dir = std::env::temp_dir().join("rust_notepad_rmd_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        let app = NotepadApp::with_file(Some(dir.join("notes.md")));
+        assert_eq!(app.content, "");
+        assert_eq!(app.file_path, Some(dir.join("notes.md")));
+        assert!(app.status_message.contains("New file"));
+    }
+
+    #[test]
+    fn existing_file_is_loaded() {
+        let dir = std::env::temp_dir().join("rust_notepad_rmd_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("existing.md");
+        std::fs::write(&path, "# hi").unwrap();
+        let app = NotepadApp::with_file(Some(path.clone()));
+        assert_eq!(app.content, "# hi");
+        assert_eq!(app.file_path, Some(path));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

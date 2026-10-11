@@ -33,6 +33,72 @@ icons = [
 ]
 formats = ["nsis", "deb", "appimage"]
 
+# rmd.cmd ships next to the exe so `rmd file.md` works (see nsis section for PATH).
+resources = [{ src = "scripts/rmd.cmd", target = "rmd.cmd" }]
+
+# Double-click support (NSIS registers + unregisters this; deb gets %F + MimeType).
+[[package.metadata.packager.fileAssociations]]
+extensions = ["md", "markdown"]
+name = "RustyNotepad.Markdown"
+description = "Markdown document"
+role = "editor"
+mime-type = "text/markdown"
+
+[package.metadata.packager.nsis]
+# Puts $INSTDIR on PATH so the installed `rmd` command resolves from any
+# terminal. Hidden section (runs with the install); uninstall cleanup lives
+# in un.onUninstSuccess below since the template offers no uninstall hook.
+# Uses only built-in NSIS features (StrFunc/LogicLib are already included by
+# the default template) plus SHCTX, which the template itself uses.
+preinstall-section = '''
+; --- Rusty Notepad: expose `rmd` on PATH ---
+Section "-AddInstallDirToPath"
+  !insertmacro SetContext
+  ReadRegStr $R0 SHCTX "Environment" "Path"
+  StrCpy $R1 ";$R0;"
+  ${StrLoc} $R2 $R1 ";$INSTDIR;" ">"
+  ${If} $R2 == ""
+    ${If} $R0 == ""
+      StrCpy $R0 "$INSTDIR"
+    ${Else}
+      StrCpy $R0 "$R0;$INSTDIR"
+    ${EndIf}
+    ; ExpandStr (not Str) so existing %VAR% entries keep working.
+    WriteRegExpandStr SHCTX "Environment" "Path" $R0
+    SendMessage 0xFFFF 0x1A 0 "STR:Environment" /TIMEOUT=5000
+  ${EndIf}
+SectionEnd
+
+; Runs inside the uninstaller: removes exactly what the section above added.
+Function un.onUninstSuccess
+  !insertmacro SetContext
+  ReadRegStr $R0 SHCTX "Environment" "Path"
+  StrLen $R1 ";$INSTDIR"
+  StrCpy $R2 $R0 "" -$R1
+  ${If} $R2 == ";$INSTDIR"
+    StrCpy $R0 $R0 -$R1
+    WriteRegExpandStr SHCTX "Environment" "Path" $R0
+    SendMessage 0xFFFF 0x1A 0 "STR:Environment" /TIMEOUT=5000
+  ${Else}
+    StrCpy $R2 $R0 $R1
+    ${If} $R2 == "$INSTDIR;"
+      StrCpy $R0 $R0 "" +$R1
+      WriteRegExpandStr SHCTX "Environment" "Path" $R0
+      SendMessage 0xFFFF 0x1A 0 "STR:Environment" /TIMEOUT=5000
+    ${ElseIf} $R0 == "$INSTDIR"
+      WriteRegExpandStr SHCTX "Environment" "Path" ""
+      SendMessage 0xFFFF 0x1A 0 "STR:Environment" /TIMEOUT=5000
+    ${EndIf}
+  ${EndIf}
+  ; The default template's uninstall loop reads `association.ext` (which
+  ; doesn't exist — the field is `extensions`), so it emits zero
+  ; APP_UNASSOCIATE calls. Do it here explicitly instead.
+  !insertmacro APP_UNASSOCIATE "md" "RustyNotepad.Markdown"
+  !insertmacro APP_UNASSOCIATE "markdown" "RustyNotepad.Markdown"
+  !insertmacro UPDATEFILEASSOC
+FunctionEnd
+'''
+
 [package.metadata.packager.macos]
 minimum_system_version = "10.13"
 
