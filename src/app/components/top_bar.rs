@@ -1,6 +1,7 @@
 use crate::app::NotepadApp;
 use crate::app::theme::ACCENT;
 use eframe::egui;
+use egui_phosphor::regular as icons;
 use rfd::FileDialog;
 use std::fs;
 
@@ -41,15 +42,22 @@ impl NotepadApp {
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
                                     ui.menu_button("File", |ui| {
-                                        if ui.button("New").clicked() {
+                                        if ui.button(format!("{} New", icons::FILE_PLUS)).clicked()
+                                        {
                                             action_new = true;
                                             ui.close_menu();
                                         }
-                                        if ui.button("Open...").clicked() {
+                                        if ui
+                                            .button(format!("{} Open…", icons::FOLDER_OPEN))
+                                            .clicked()
+                                        {
                                             action_open = true;
                                             ui.close_menu();
                                         }
-                                        if ui.button("Save").clicked() {
+                                        if ui
+                                            .button(format!("{} Save", icons::FLOPPY_DISK))
+                                            .clicked()
+                                        {
                                             action_save = true;
                                             ui.close_menu();
                                         }
