@@ -1,7 +1,23 @@
 use crate::app::NotepadApp;
+use crate::app::theme::ACCENT;
 use eframe::egui;
 use rfd::FileDialog;
 use std::fs;
+
+/// Header tab with a min-width so the title always fits; click toggles a panel.
+/// Each panel header has its own × close button.
+fn view_tab(ui: &mut egui::Ui, selected: &mut bool, label: &str, hover: &str) {
+    if ui
+        .add_sized(
+            egui::vec2(88.0, 24.0),
+            egui::SelectableLabel::new(*selected, label),
+        )
+        .on_hover_text(hover)
+        .clicked()
+    {
+        *selected = !*selected;
+    }
+}
 
 impl NotepadApp {
     pub fn show_top_bar(&mut self, ctx: &egui::Context) {
@@ -28,6 +44,29 @@ impl NotepadApp {
                                 ui.close_menu();
                             }
                         });
+                        ui.separator();
+                        // Single app accent color for tab selection.
+                        ui.visuals_mut().selection.bg_fill = ACCENT;
+                        // Order mirrors the panel layout: assistant (left),
+                        // editor (center), preview (right).
+                        view_tab(
+                            ui,
+                            &mut self.tabs.assistant,
+                            "Assistant",
+                            "Toggle the Gemini assistant panel",
+                        );
+                        view_tab(
+                            ui,
+                            &mut self.tabs.editor,
+                            "Editor",
+                            "Toggle the editor panel",
+                        );
+                        view_tab(
+                            ui,
+                            &mut self.tabs.preview,
+                            "Preview",
+                            "Toggle the Markdown preview panel",
+                        );
                     });
                 });
         });

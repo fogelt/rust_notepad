@@ -29,7 +29,8 @@ fn main() -> eframe::Result<()> {
     };
 
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([800.0, 600.0])
+        .with_inner_size(crate::app::theme::WINDOW_MIN_SIZE)
+        .with_min_inner_size(crate::app::theme::WINDOW_MIN_SIZE)
         .with_title("Rusty Notepad");
 
     if let Some(icon) = icon_data {

@@ -438,7 +438,7 @@ impl NotepadApp {
                             .on_hover_text("Ask Gemini to edit/write the Markdown")
                             .clicked()
                         {
-                            self.chat_open = !self.chat_open;
+                            self.tabs.assistant = !self.tabs.assistant;
                         }
                     });
                 });

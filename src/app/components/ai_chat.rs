@@ -1,11 +1,12 @@
 use crate::app::NotepadApp;
+use crate::app::theme::{
+    ACCENT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
+    panel_frame, panel_header,
+};
 use eframe::egui;
 use egui::text::CCursorRange;
 use egui::text_edit::TextEditState;
 use std::sync::mpsc;
-
-/// Purple accent shared by the Send button and the usage progress bar.
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(124, 92, 255);
 
 /// Outcome of one background Gemini request, tagged with the model used.
 pub struct ChatOutcome {
@@ -501,11 +502,17 @@ impl NotepadApp {
                         egui::ProgressBar::new(frac)
                             .fill(ACCENT)
                             .rounding(egui::Rounding::ZERO)
-                            .text(format!(
-                                "{used} / {} session requests vs daily limit",
-                                lim.rpd
-                            ))
-                            .show_percentage(),
+                            // Note: no `.show_percentage()` — it replaces
+                            // custom text (and its color), so the percent
+                            // is baked into our own white label instead.
+                            .text(
+                                egui::RichText::new(format!(
+                                    "{used}/{} · {}%",
+                                    lim.rpd,
+                                    (frac * 100.0).round() as u32,
+                                ))
+                                .color(egui::Color32::WHITE),
+                            ),
                     );
                 } else {
                     ui.weak(format!("{used} session requests."));
@@ -517,7 +524,7 @@ impl NotepadApp {
     }
 
     pub fn show_chat_panel(&mut self, ctx: &egui::Context) {
-        if !self.chat_open {
+        if !self.tabs.assistant {
             return;
         }
         self.poll_chat();
@@ -529,138 +536,151 @@ impl NotepadApp {
 
         egui::SidePanel::left("ai_chat_panel")
             .resizable(true)
-            .default_width(380.0)
-            .min_width(300.0)
+            .default_width(ASSISTANT_DEFAULT_WIDTH)
+            .min_width(ASSISTANT_MIN_WIDTH)
+            // Cap the width so the panel can never be dragged wide enough
+            // to hide the central editor entirely.
+            .max_width((ctx.available_rect().width() - MIN_EDITOR_WIDTH).max(MIN_SIDE_PANEL_WIDTH))
+            .frame(panel_frame(ctx))
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Gemini Assistant").strong());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("✕").on_hover_text("Close").clicked() {
-                            self.chat_open = false;
-                        }
-                    });
-                });
+                if panel_header(ui, "Assistant", "Close").clicked() {
+                    self.tabs.assistant = false;
+                }
                 ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label("Model:");
-                    if self.chat_models_loading {
-                        ui.spinner();
-                    }
-                    let models = self.chat_models.clone();
-                    if models.is_empty() && !self.chat_models_loading {
-                        ui.weak("Set GEMINI_API_KEY to load models…");
-                    } else {
-                        egui::ComboBox::from_id_source("gemini_model")
-                            .selected_text(if self.chat_model.is_empty() {
-                                "Select…"
+                // Roomier spacing, and everything below scrolls so short
+                // windows clip nothing instead of hiding content.
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 10.0);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label("Model:");
+                            if self.chat_models_loading {
+                                ui.spinner();
+                            }
+                            let models = self.chat_models.clone();
+                            if models.is_empty() && !self.chat_models_loading {
+                                ui.weak("Set GEMINI_API_KEY to load models…");
                             } else {
-                                &self.chat_model
-                            })
-                            .show_ui(ui, |ui| {
-                                for m in &models {
-                                    ui.selectable_value(
-                                        &mut self.chat_model,
-                                        m.clone(),
-                                        m.as_str(),
+                                egui::ComboBox::from_id_source("gemini_model")
+                                    .selected_text(if self.chat_model.is_empty() {
+                                        "Select…"
+                                    } else {
+                                        &self.chat_model
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        for m in &models {
+                                            ui.selectable_value(
+                                                &mut self.chat_model,
+                                                m.clone(),
+                                                m.as_str(),
+                                            );
+                                        }
+                                    });
+                            }
+                            if ui
+                                .small_button("⟳")
+                                .on_hover_text("Reload model list from Google")
+                                .clicked()
+                            {
+                                self.chat_models.clear();
+                                self.chat_models_error = None;
+                                self.ensure_models_loaded();
+                            }
+                        });
+                        if let Some(err) = self.chat_models_error.clone() {
+                            ui.weak(format!("{err} Using snapshot list."));
+                        }
+                        self.show_rate_limits(ui);
+                        ui.add_space(4.0);
+                        ui.label("Describe how to edit or write the Markdown:");
+                        let input = egui::TextEdit::multiline(&mut self.chat_input)
+                            .hint_text("e.g. Turn these bullets into a table…")
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY)
+                            .show(ui);
+                        // Ctrl+Enter while typing sends. Checked against the raw
+                        // input state (not `lost_focus`, which never fires here
+                        // because Enter keeps focus in a multiline field).
+                        if input.response.has_focus()
+                            && ctx.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command)
+                        {
+                            self.send_chat();
+                        }
+
+                        ui.horizontal(|ui| {
+                            let send = egui::Button::new(
+                                egui::RichText::new("✨ Send  (Ctrl+Enter)").strong(),
+                            )
+                            .fill(ACCENT);
+                            ui.add_enabled(
+                                !self.chat_busy && !self.chat_input.trim().is_empty(),
+                                send,
+                            )
+                            .clicked()
+                            .then(|| self.send_chat());
+                            if self.chat_busy {
+                                ui.spinner();
+                                ui.label("Thinking…");
+                            }
+                        });
+
+                        if let Some(err) = self.chat_error.clone() {
+                            ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
+                        }
+
+                        ui.separator();
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Suggestion:").strong());
+                        egui::ScrollArea::vertical()
+                            .max_height(220.0)
+                            .auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                                if self.chat_response.is_empty() {
+                                    ui.weak("No suggestion yet.");
+                                } else {
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut self.chat_response)
+                                            .desired_rows(8)
+                                            .desired_width(f32::INFINITY)
+                                            .code_editor(),
                                     );
                                 }
                             });
-                    }
-                    if ui
-                        .small_button("⟳")
-                        .on_hover_text("Reload model list from Google")
-                        .clicked()
-                    {
-                        self.chat_models.clear();
-                        self.chat_models_error = None;
-                        self.ensure_models_loaded();
-                    }
-                });
-                if let Some(err) = self.chat_models_error.clone() {
-                    ui.weak(format!("{err} Using snapshot list."));
-                }
-                self.show_rate_limits(ui);
-                ui.label("Describe how to edit or write the Markdown:");
-                let input = egui::TextEdit::multiline(&mut self.chat_input)
-                    .hint_text("e.g. Turn these bullets into a table…")
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY)
-                    .show(ui);
-                // Ctrl+Enter while typing sends. Checked against the raw
-                // input state (not `lost_focus`, which never fires here
-                // because Enter keeps focus in a multiline field).
-                if input.response.has_focus()
-                    && ctx.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command)
-                {
-                    self.send_chat();
-                }
 
-                ui.horizontal(|ui| {
-                    let send =
-                        egui::Button::new(egui::RichText::new("✨ Send  (Ctrl+Enter)").strong())
-                            .fill(ACCENT);
-                    ui.add_enabled(!self.chat_busy && !self.chat_input.trim().is_empty(), send)
-                        .clicked()
-                        .then(|| self.send_chat());
-                    if self.chat_busy {
-                        ui.spinner();
-                        ui.label("Thinking…");
-                    }
-                });
-
-                if let Some(err) = self.chat_error.clone() {
-                    ui.colored_label(egui::Color32::from_rgb(220, 80, 80), err);
-                }
-
-                ui.separator();
-                ui.label(egui::RichText::new("Suggestion:").strong());
-                egui::ScrollArea::vertical()
-                    .max_height(220.0)
-                    .auto_shrink([false; 2])
-                    .show(ui, |ui| {
-                        if self.chat_response.is_empty() {
-                            ui.weak("No suggestion yet.");
-                        } else {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut self.chat_response)
-                                    .desired_rows(8)
-                                    .desired_width(f32::INFINITY)
-                                    .code_editor(),
-                            );
-                        }
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(
+                                    !self.chat_response.is_empty(),
+                                    egui::Button::new("Insert at cursor"),
+                                )
+                                .clicked()
+                            {
+                                let snippet = self.chat_response.clone();
+                                insert_at_cursor(self, ctx, &snippet);
+                                self.status_message =
+                                    String::from("Unsaved changes (Save file to enable autosave).");
+                            }
+                            if ui
+                                .add_enabled(
+                                    !self.chat_response.is_empty(),
+                                    egui::Button::new("Replace document"),
+                                )
+                                .clicked()
+                            {
+                                self.content = self.chat_response.clone();
+                                self.status_message =
+                                    String::from("Unsaved changes (Save file to enable autosave).");
+                            }
+                            if ui.button("Clear").clicked() {
+                                self.chat_response.clear();
+                                self.chat_error = None;
+                            }
+                        });
                     });
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            !self.chat_response.is_empty(),
-                            egui::Button::new("Insert at cursor"),
-                        )
-                        .clicked()
-                    {
-                        let snippet = self.chat_response.clone();
-                        insert_at_cursor(self, ctx, &snippet);
-                        self.status_message =
-                            String::from("Unsaved changes (Save file to enable autosave).");
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.chat_response.is_empty(),
-                            egui::Button::new("Replace document"),
-                        )
-                        .clicked()
-                    {
-                        self.content = self.chat_response.clone();
-                        self.status_message =
-                            String::from("Unsaved changes (Save file to enable autosave).");
-                    }
-                    if ui.button("Clear").clicked() {
-                        self.chat_response.clear();
-                        self.chat_error = None;
-                    }
-                });
             });
-        if !self.chat_open {
+        if !self.tabs.assistant {
             // Dropped receiver (if any) just stops being polled; the
             // background thread's send will fail silently.
             self.chat_rx = None;

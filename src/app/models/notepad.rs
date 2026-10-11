@@ -5,12 +5,31 @@ use std::sync::mpsc::Receiver;
 
 use crate::app::components::ai_chat::ChatOutcome;
 
+/// Visibility toggles for the three main panels, driven by the header tabs.
+/// Adding a new panel: add a field here, a tab in `show_top_bar`, and gate
+/// the panel in its `show_*` function.
+pub struct PanelTabs {
+    pub editor: bool,
+    pub preview: bool,
+    pub assistant: bool,
+}
+
+impl Default for PanelTabs {
+    fn default() -> Self {
+        Self {
+            editor: true,
+            preview: true,
+            assistant: false,
+        }
+    }
+}
+
 pub struct NotepadApp {
     pub content: String,
     pub file_path: Option<PathBuf>,
     pub status_message: String,
     pub markdown_cache: CommonMarkCache,
-    pub chat_open: bool,
+    pub tabs: PanelTabs,
     pub chat_input: String,
     pub chat_response: String,
     pub chat_error: Option<String>,
@@ -23,6 +42,9 @@ pub struct NotepadApp {
     pub chat_models_error: Option<String>,
     /// Successful Gemini requests this session, per model id.
     pub chat_session_requests: HashMap<String, u32>,
+    /// Last seen monitor size / DPI, to detect screen changes.
+    pub last_monitor_size: Option<[f32; 2]>,
+    pub last_native_ppp: Option<f32>,
 }
 
 impl NotepadApp {
@@ -53,7 +75,7 @@ impl Default for NotepadApp {
             file_path: None,
             status_message: String::from("Ready"),
             markdown_cache: CommonMarkCache::default(),
-            chat_open: false,
+            tabs: PanelTabs::default(),
             chat_input: String::new(),
             chat_response: String::new(),
             chat_error: None,
@@ -67,6 +89,21 @@ impl Default for NotepadApp {
             chat_models_rx: None,
             chat_models_error: None,
             chat_session_requests: HashMap::new(),
+            last_monitor_size: None,
+            last_native_ppp: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tabs_default_to_editor_and_preview() {
+        let app = NotepadApp::default();
+        assert!(app.tabs.editor);
+        assert!(app.tabs.preview);
+        assert!(!app.tabs.assistant);
     }
 }
