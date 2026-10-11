@@ -596,6 +596,7 @@ impl NotepadApp {
                                 } else {
                                     "Show the key"
                                 })
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .clicked()
                             {
                                 self.chat_show_key = !self.chat_show_key;
