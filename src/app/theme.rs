@@ -14,7 +14,7 @@ pub const WINDOW_MIN_SIZE: [f32; 2] = [700.0, 490.0];
 /// Panel minimums are sized so the headers never clip at the minimum
 /// window width: assistant cap + preview minimum must fit in the window
 /// (see the test below).
-pub const ASSISTANT_MIN_WIDTH: f32 = 280.0;
+pub const ASSISTANT_MIN_WIDTH: f32 = 240.0;
 pub const ASSISTANT_DEFAULT_WIDTH: f32 = 320.0;
 pub const PREVIEW_MIN_WIDTH: f32 = 180.0;
 

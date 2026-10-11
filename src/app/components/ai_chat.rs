@@ -6,6 +6,7 @@ use crate::app::theme::{
 use eframe::egui;
 use egui::text::CCursorRange;
 use egui::text_edit::TextEditState;
+use egui_phosphor::regular as icons;
 use std::sync::mpsc;
 
 /// Outcome of one background Gemini request, tagged with the model used.
@@ -411,6 +412,14 @@ impl NotepadApp {
         }
     }
 
+    /// API key from the settings field, falling back to the environment.
+    fn api_key(&self) -> String {
+        if !self.chat_api_key.trim().is_empty() {
+            return self.chat_api_key.trim().to_string();
+        }
+        crate::app::config::pick("", "GEMINI_API_KEY")
+    }
+
     /// Fetch the live model list once (needs the API key). Falls back to
     /// the static snapshot when the request fails.
     fn ensure_models_loaded(&mut self) {
@@ -418,10 +427,10 @@ impl NotepadApp {
         {
             return;
         }
-        let api_key = match std::env::var("GEMINI_API_KEY") {
-            Ok(k) if !k.trim().is_empty() => k,
-            _ => return,
-        };
+        let api_key = self.api_key();
+        if api_key.is_empty() {
+            return;
+        }
         let (tx, rx) = mpsc::channel();
         self.chat_models_rx = Some(rx);
         self.chat_models_loading = true;
@@ -435,14 +444,12 @@ impl NotepadApp {
         if instruction.is_empty() || self.chat_busy {
             return;
         }
-        let api_key = match std::env::var("GEMINI_API_KEY") {
-            Ok(k) if !k.trim().is_empty() => k,
-            _ => {
-                self.chat_error =
-                    Some("GEMINI_API_KEY is not set. Add it to your .env file.".to_string());
-                return;
-            }
-        };
+        let api_key = self.api_key();
+        if api_key.is_empty() {
+            self.chat_error =
+                Some("No API key: paste one into the API key field above.".to_string());
+            return;
+        }
         let model = self.chat_model.trim().to_string();
         if model.is_empty() {
             self.chat_error =
@@ -555,13 +562,80 @@ impl NotepadApp {
                     .show(ui, |ui| {
                         ui.add_space(2.0);
                         ui.horizontal(|ui| {
-                            ui.label("Model:");
+                            ui.label("API key:");
+                            // Eye toggle lives inside the field, on the left;
+                            // the widened text margin keeps typed text clear.
+                            let mut text_margin = egui::Margin::symmetric(4.0, 2.0);
+                            text_margin.left = 30.0;
+                            let field = ui.add(
+                                egui::TextEdit::singleline(&mut self.chat_api_key)
+                                    .password(!self.chat_show_key)
+                                    .hint_text("Paste your Gemini API key…")
+                                    .desired_width(f32::INFINITY)
+                                    .margin(text_margin),
+                            );
+                            let eye_rect = egui::Rect::from_min_size(
+                                field.rect.left_top()
+                                    + egui::vec2(5.0, (field.rect.height() - 20.0) / 2.0),
+                                egui::vec2(20.0, 20.0),
+                            );
+                            let eye = if self.chat_show_key {
+                                icons::EYE
+                            } else {
+                                icons::EYE_SLASH
+                            };
+                            if ui
+                                .put(
+                                    eye_rect,
+                                    egui::Button::new(egui::RichText::new(eye).size(15.0))
+                                        .frame(false),
+                                )
+                                .on_hover_text(if self.chat_show_key {
+                                    "Hide the key"
+                                } else {
+                                    "Show the key"
+                                })
+                                .clicked()
+                            {
+                                self.chat_show_key = !self.chat_show_key;
+                            }
+                        });
+                        if !self.chat_api_key.trim().is_empty()
+                            && !self.chat_api_key.trim().starts_with("AIza")
+                        {
+                            ui.weak("Keys usually start with “AIza” — check for extra spaces.");
+                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Save key & model").clicked() {
+                                let cfg = crate::app::config::AssistantConfig {
+                                    api_key: self.chat_api_key.trim().to_string(),
+                                    model: self.chat_model.trim().to_string(),
+                                };
+                                match crate::app::config::save(&cfg) {
+                                    Ok(path) => {
+                                        self.chat_api_key = cfg.api_key;
+                                        self.chat_error = None;
+                                        self.status_message = format!(
+                                            "Assistant settings saved to {}.",
+                                            path.display()
+                                        );
+                                        // A fresh key may unlock the live model list.
+                                        self.ensure_models_loaded();
+                                    }
+                                    Err(err) => self.chat_error = Some(err),
+                                }
+                            }
+                            ui.weak("Stored locally, reused next launch.");
+                        });
+                        ui.separator();
+                        ui.label("Model:");
+                        ui.horizontal(|ui| {
                             if self.chat_models_loading {
                                 ui.spinner();
                             }
                             let models = self.chat_models.clone();
                             if models.is_empty() && !self.chat_models_loading {
-                                ui.weak("Set GEMINI_API_KEY to load models…");
+                                ui.weak("Paste an API key above to load models…");
                             } else {
                                 egui::ComboBox::from_id_source("gemini_model")
                                     .selected_text(if self.chat_model.is_empty() {
@@ -649,7 +723,9 @@ impl NotepadApp {
                                 }
                             });
 
-                        ui.horizontal(|ui| {
+                        // Wrapped so the buttons flow instead of forcing
+                        // the panel wider at small sizes.
+                        ui.horizontal_wrapped(|ui| {
                             if ui
                                 .add_enabled(
                                     !self.chat_response.is_empty(),

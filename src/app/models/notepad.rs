@@ -36,6 +36,9 @@ pub struct NotepadApp {
     pub chat_busy: bool,
     pub chat_rx: Option<Receiver<ChatOutcome>>,
     pub chat_model: String,
+    pub chat_api_key: String,
+    /// Show the API key in plaintext (transient UI state, not persisted).
+    pub chat_show_key: bool,
     pub chat_models: Vec<String>,
     pub chat_models_loading: bool,
     pub chat_models_rx: Option<Receiver<Result<Vec<String>, String>>>,
@@ -70,6 +73,8 @@ impl NotepadApp {
 
 impl Default for NotepadApp {
     fn default() -> Self {
+        // Stored settings win; environment (.env) is the fallback.
+        let stored = crate::app::config::load();
         Self {
             content: String::new(),
             file_path: None,
@@ -81,9 +86,9 @@ impl Default for NotepadApp {
             chat_error: None,
             chat_busy: false,
             chat_rx: None,
-            chat_model: std::env::var("GEMINI_MODEL")
-                .map(|m| m.trim().to_string())
-                .unwrap_or_default(),
+            chat_model: crate::app::config::pick(&stored.model, "GEMINI_MODEL"),
+            chat_api_key: crate::app::config::pick(&stored.api_key, "GEMINI_API_KEY"),
+            chat_show_key: false,
             chat_models: Vec::new(),
             chat_models_loading: false,
             chat_models_rx: None,
