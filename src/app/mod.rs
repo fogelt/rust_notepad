@@ -11,5 +11,6 @@ impl eframe::App for NotepadApp {
         self.show_markdown_toolbar(ctx);
         self.show_bottom_bar(ctx);
         self.show_editor(ctx);
+        self.show_chat_window(ctx);
     }
 }

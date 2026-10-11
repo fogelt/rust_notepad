@@ -425,6 +425,21 @@ impl NotepadApp {
                         if toolbar_icon(ui, icons::TABLE, "Insert table").clicked() {
                             action = Some(15);
                         }
+                        ui.separator();
+                        // AI assistant (colored to stand out)
+                        let ai = egui::Button::new(
+                            egui::RichText::new(icons::SPARKLE)
+                                .size(18.0)
+                                .color(egui::Color32::WHITE),
+                        )
+                        .fill(egui::Color32::from_rgb(124, 92, 255));
+                        if ui
+                            .add_sized([32.0, 28.0], ai)
+                            .on_hover_text("Ask Gemini to edit/write the Markdown")
+                            .clicked()
+                        {
+                            self.chat_open = !self.chat_open;
+                        }
                     });
                 });
         });

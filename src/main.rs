@@ -6,6 +6,8 @@ use std::path::PathBuf;
 mod app;
 
 fn main() -> eframe::Result<()> {
+    // Load GEMINI_API_KEY (and optional GEMINI_MODEL) from .env; ignored if absent.
+    let _ = dotenvy::dotenv();
     let args: Vec<String> = std::env::args().collect();
     let initial_path = if args.len() > 1 {
         Some(PathBuf::from(&args[1]))
