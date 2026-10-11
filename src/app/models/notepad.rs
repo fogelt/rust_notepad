@@ -1,6 +1,9 @@
 use egui_commonmark::CommonMarkCache;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
+
+use crate::app::components::ai_chat::ChatOutcome;
 
 pub struct NotepadApp {
     pub content: String,
@@ -12,7 +15,14 @@ pub struct NotepadApp {
     pub chat_response: String,
     pub chat_error: Option<String>,
     pub chat_busy: bool,
-    pub chat_rx: Option<Receiver<Result<String, String>>>,
+    pub chat_rx: Option<Receiver<ChatOutcome>>,
+    pub chat_model: String,
+    pub chat_models: Vec<String>,
+    pub chat_models_loading: bool,
+    pub chat_models_rx: Option<Receiver<Result<Vec<String>, String>>>,
+    pub chat_models_error: Option<String>,
+    /// Successful Gemini requests this session, per model id.
+    pub chat_session_requests: HashMap<String, u32>,
 }
 
 impl NotepadApp {
@@ -49,6 +59,14 @@ impl Default for NotepadApp {
             chat_error: None,
             chat_busy: false,
             chat_rx: None,
+            chat_model: std::env::var("GEMINI_MODEL")
+                .map(|m| m.trim().to_string())
+                .unwrap_or_default(),
+            chat_models: Vec::new(),
+            chat_models_loading: false,
+            chat_models_rx: None,
+            chat_models_error: None,
+            chat_session_requests: HashMap::new(),
         }
     }
 }
