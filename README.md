@@ -1,27 +1,50 @@
-# Project Commands
+# Rusty Notepad
 
-To run the project:
+A lightweight Markdown text editor built in Rust on [eframe](https://github.com/emilk/egui)/egui.
+
+## Run
 
 ```bash
 cargo run
 ```
 
-To build the project:
+Open a file directly with `cargo run -- <file.md>`.
+
+## Configure (optional)
+
+The Gemini assistant needs an API key ([get one here](https://aistudio.google.com/api-keys)).
+For development, put it in a `.env` file (gitignored):
+
+```env
+GEMINI_API_KEY=…
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+At runtime the Assistant tab can also save both values to `%APPDATA%\rust_notepad\config.json`
+(`~/.config/rust_notepad/config.json` elsewhere); saved values take precedence over `.env`.
+
+## Checks
 
 ```bash
-cargo packager --release
+cargo test      # unit tests
+cargo fmt       # formatting (required clean)
+cargo clippy    # lint (only pre-existing File-menu notes should remain)
 ```
 
-## Environment Configuration
+## Build / package
 
-To get started, you need to configure your environment variables. 
-
-1. Copy the `.env_example` file and rename it to `.env`.
-2. Open the `.env` file and replace the placeholder values with your specific configuration:
-
-```text
-GEMINI_API_KEY=your_actual_api_key_here
-GEMINI_MODEL=gemini-3.1-flash-lite
+```bash
+cargo build --release
+cargo packager --release   # nsis / deb / appimage (needs cargo-packager)
 ```
 
-You can obtain your Gemini API key by visiting the [Google AI Studio](https://aistudio.google.com/).
+Windows executables embed `assets/icon.ico` via `build.rs`.
+
+## Layout
+
+* `src/main.rs` — window/viewport setup, font + `.env` loading
+* `src/app/mod.rs` — `eframe::App` update loop, panel + window-size management
+* `src/app/components/` — `top_bar`, `toolbar`, `editor`, `ai_chat`, `bottom_bar`
+* `src/app/models/notepad.rs` — app state
+* `src/app/theme.rs` — shared accent color, panel metrics, panel helpers
+* `src/app/config.rs` — assistant settings persistence
