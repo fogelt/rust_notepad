@@ -2,6 +2,7 @@ use crate::app::NotepadApp;
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
+use egui_phosphor::regular as icons;
 
 const EDITOR_ID: &str = "editor_text";
 
@@ -58,6 +59,16 @@ fn strip_heading_marker(line: &str) -> &str {
     } else {
         line
     }
+}
+
+/// Uniform icon button for the markdown toolbar.
+/// Fixed size + larger icon font keeps the row aligned and scannable.
+fn toolbar_icon(ui: &mut egui::Ui, icon: &str, hover: &str) -> egui::Response {
+    ui.add_sized(
+        [32.0, 28.0],
+        egui::Button::new(egui::RichText::new(icon).size(18.0)),
+    )
+    .on_hover_text(hover)
 }
 
 impl NotepadApp {
@@ -352,104 +363,66 @@ impl NotepadApp {
                 .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                 .show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if ui
-                            .button(egui::RichText::new("B").strong())
-                            .on_hover_text("Bold (**text**)")
-                            .clicked()
-                        {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
+
+                        // Inline formatting
+                        if toolbar_icon(ui, icons::TEXT_B, "Bold (**text**)").clicked() {
                             action = Some(0);
                         }
-                        if ui
-                            .button(egui::RichText::new("I").italics())
-                            .on_hover_text("Italic (*text*)")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::TEXT_ITALIC, "Italic (*text*)").clicked() {
                             action = Some(1);
                         }
-                        if ui
-                            .button(egui::RichText::new("S").strikethrough())
-                            .on_hover_text("Strikethrough (~~text~~)")
+                        if toolbar_icon(ui, icons::TEXT_STRIKETHROUGH, "Strikethrough (~~text~~)")
                             .clicked()
                         {
                             action = Some(2);
                         }
-                        if ui
-                            .button(egui::RichText::new("Code").code())
-                            .on_hover_text("Inline code (`code`)")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::CODE_SIMPLE, "Inline code (`code`)").clicked() {
                             action = Some(3);
                         }
                         ui.separator();
-                        if ui.button("H1").on_hover_text("Heading 1 (# )").clicked() {
+                        // Headings
+                        if toolbar_icon(ui, icons::TEXT_H_ONE, "Heading 1 (# )").clicked() {
                             action = Some(4);
                         }
-                        if ui.button("H2").on_hover_text("Heading 2 (## )").clicked() {
+                        if toolbar_icon(ui, icons::TEXT_H_TWO, "Heading 2 (## )").clicked() {
                             action = Some(5);
                         }
-                        if ui.button("H3").on_hover_text("Heading 3 (### )").clicked() {
+                        if toolbar_icon(ui, icons::TEXT_H_THREE, "Heading 3 (### )").clicked() {
                             action = Some(6);
                         }
                         ui.separator();
-                        if ui
-                            .button("Quote")
-                            .on_hover_text("Blockquote (> )")
-                            .clicked()
-                        {
+                        // Blocks / lists
+                        if toolbar_icon(ui, icons::QUOTES, "Blockquote (> )").clicked() {
                             action = Some(7);
                         }
-                        if ui
-                            .button("List")
-                            .on_hover_text("Bullet list (- )")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::LIST_BULLETS, "Bullet list (- )").clicked() {
                             action = Some(8);
                         }
-                        if ui
-                            .button("1.")
-                            .on_hover_text("Ordered list (1. 2. 3.)")
+                        if toolbar_icon(ui, icons::LIST_NUMBERS, "Ordered list (1. 2. 3.)")
                             .clicked()
                         {
                             action = Some(9);
                         }
-                        if ui
-                            .button("Task")
-                            .on_hover_text("Task list (- [ ] )")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::CHECK_SQUARE, "Task list (- [ ] )").clicked() {
                             action = Some(10);
                         }
                         ui.separator();
-                        if ui
-                            .button("Link")
-                            .on_hover_text("Link ([text](url))")
-                            .clicked()
-                        {
+                        // Inserts
+                        if toolbar_icon(ui, icons::LINK_SIMPLE, "Link ([text](url))").clicked() {
                             action = Some(11);
                         }
-                        if ui
-                            .button("Image")
-                            .on_hover_text("Image (![alt](url))")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::IMAGE, "Image (![alt](url))").clicked() {
                             action = Some(12);
                         }
-                        if ui
-                            .button("Block")
-                            .on_hover_text("Code block (```)")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::CODE_BLOCK, "Code block (```)").clicked() {
                             action = Some(13);
                         }
-                        if ui
-                            .button("HR")
-                            .on_hover_text("Horizontal rule (---)")
-                            .clicked()
-                        {
+                        if toolbar_icon(ui, icons::MINUS, "Horizontal rule (---)").clicked() {
                             action = Some(14);
                         }
-                        if ui.button("Table").on_hover_text("Insert table").clicked() {
+                        if toolbar_icon(ui, icons::TABLE, "Insert table").clicked() {
                             action = Some(15);
                         }
                     });

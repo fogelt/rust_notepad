@@ -43,6 +43,11 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "rust_notepad",
         options,
-        Box::new(move |_cc| Box::new(app::NotepadApp::with_file(initial_path))),
+        Box::new(move |cc| {
+            let mut fonts = egui::FontDefinitions::default();
+            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            cc.egui_ctx.set_fonts(fonts);
+            Box::new(app::NotepadApp::with_file(initial_path))
+        }),
     )
 }
