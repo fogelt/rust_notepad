@@ -557,6 +557,7 @@ impl NotepadApp {
                 // Roomier spacing, and everything below scrolls so short
                 // windows clip nothing instead of hiding content.
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 10.0);
+                ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
@@ -654,7 +655,7 @@ impl NotepadApp {
                                     });
                             }
                             if ui
-                                .small_button("⟳")
+                                .button("⟳")
                                 .on_hover_text("Reload model list from Google")
                                 .clicked()
                             {
