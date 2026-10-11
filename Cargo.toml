@@ -5,10 +5,10 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 eframe = "0.27"
 rfd = "0.14"
-egui_commonmark = "0.14"
+egui_commonmark = { version = "0.14", features = ["fetch", "svg"] }
 egui-phosphor = "0.5"
 
 [build-dependencies]
