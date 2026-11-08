@@ -1,7 +1,7 @@
 use crate::app::NotepadApp;
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
+    ACCENT, ACCENT_LINK, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
     PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, panel_frame, panel_header,
 };
 use eframe::egui;
@@ -162,6 +162,31 @@ fn preview_style(ui: &egui::Ui) -> egui::Style {
     style
 }
 
+/// Shared label style for template and empty-state buttons: accent-colored icon
+/// followed by normal button text.
+fn icon_label(ui: &egui::Ui, icon: &str, label: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &format!("{icon}  "),
+        0.0,
+        egui::text::TextFormat {
+            font_id: egui::FontId::proportional(13.0),
+            color: ACCENT,
+            ..Default::default()
+        },
+    );
+    job.append(
+        label,
+        0.0,
+        egui::text::TextFormat {
+            font_id: egui::FontId::proportional(13.0),
+            color: ui.visuals().text_color(),
+            ..Default::default()
+        },
+    );
+    job
+}
+
 impl NotepadApp {
     pub fn show_editor(&mut self, ctx: &egui::Context) {
         let show_editor = self.tabs.editor;
@@ -315,25 +340,8 @@ impl NotepadApp {
                                         for (index, template) in
                                             templates::TEMPLATES.iter().enumerate()
                                         {
-                                            let mut label = egui::text::LayoutJob::default();
-                                            label.append(
-                                                &format!("{}  ", template.icon),
-                                                0.0,
-                                                egui::text::TextFormat {
-                                                    font_id: egui::FontId::proportional(13.0),
-                                                    color: ACCENT,
-                                                    ..Default::default()
-                                                },
-                                            );
-                                            label.append(
-                                                template.name,
-                                                0.0,
-                                                egui::text::TextFormat {
-                                                    font_id: egui::FontId::proportional(13.0),
-                                                    color: ui.visuals().text_color(),
-                                                    ..Default::default()
-                                                },
-                                            );
+                                            let label =
+                                                icon_label(ui, template.icon, template.name);
                                             if ui
                                                 .add_sized(
                                                     [button_w, 28.0],
@@ -415,24 +423,15 @@ impl NotepadApp {
                 );
                 ui.add_space(16.0);
 
-                let show_editor = egui::Button::new(
-                    egui::RichText::new(format!("{}  Show editor", icons::PENCIL_SIMPLE))
-                        .strong()
-                        .color(ACCENT_TEXT),
-                )
-                .fill(ACCENT);
-                if ui.add_sized([170.0, 32.0], show_editor).clicked() {
+                let show_editor =
+                    egui::Button::new(icon_label(ui, icons::PENCIL_SIMPLE, "Show editor"));
+                if ui.add_sized([170.0, 30.0], show_editor).clicked() {
                     self.tabs.editor = true;
                 }
 
                 ui.add_space(6.0);
-                let show_preview = egui::Button::new(
-                    egui::RichText::new(format!("{}  Show preview", icons::EYE))
-                        .strong()
-                        .color(ACCENT_TEXT),
-                )
-                .fill(ACCENT);
-                if ui.add_sized([170.0, 32.0], show_preview).clicked() {
+                let show_preview = egui::Button::new(icon_label(ui, icons::EYE, "Show preview"));
+                if ui.add_sized([170.0, 30.0], show_preview).clicked() {
                     self.tabs.preview = true;
                 }
             });
