@@ -237,72 +237,110 @@ impl NotepadApp {
                         );
                         ui.separator();
                         ui.allocate_ui_with_layout(
-                            egui::vec2(84.0, 30.0),
+                            egui::vec2(104.0, 30.0),
                             egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                             |ui| {
-                                ui.menu_button("Settings", |ui| {
-                                    ui.set_min_width(250.0);
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 2.0;
+                                    let response = ui
+                                        .menu_button("Settings", |ui| {
+                                            ui.set_min_width(250.0);
 
-                                    ui.label(egui::RichText::new("Editor font").strong());
-                                    let mut font = self.ui_settings.editor_font;
-                                    ui.radio_value(&mut font, EditorFont::Sans, "Sans");
-                                    ui.radio_value(&mut font, EditorFont::Monospace, "Monospace");
-                                    if font != self.ui_settings.editor_font {
-                                        self.ui_settings.editor_font = font;
-                                        self.save_ui_settings();
-                                    }
+                                            ui.label(egui::RichText::new("Editor").strong());
+                                            ui.horizontal(|ui| {
+                                                ui.label("Font");
+                                                let mut font =
+                                                    self.ui_settings.editor_font;
+                                                ui.radio_value(
+                                                    &mut font,
+                                                    EditorFont::Sans,
+                                                    "Sans",
+                                                );
+                                                ui.radio_value(
+                                                    &mut font,
+                                                    EditorFont::Monospace,
+                                                    "Monospace",
+                                                );
+                                                if font != self.ui_settings.editor_font {
+                                                    self.ui_settings.editor_font = font;
+                                                    self.save_ui_settings();
+                                                }
+                                            });
 
-                                    ui.add_space(4.0);
-                                    let size = ui.add(
-                                        egui::Slider::new(
-                                            &mut self.ui_settings.editor_font_size,
-                                            UiSettings::EDITOR_SIZE_RANGE,
-                                        )
-                                        .text("Text size")
-                                        .suffix(" pt")
-                                        .step_by(0.5),
-                                    );
-                                    if size.drag_stopped() || (size.changed() && !size.dragged())
-                                    {
-                                        self.save_ui_settings();
-                                    }
-                                    let line = ui.add(
-                                        egui::Slider::new(
-                                            &mut self.ui_settings.editor_line_height,
-                                            UiSettings::EDITOR_LINE_RANGE,
-                                        )
-                                        .text("Line spacing")
-                                        .suffix(" pt")
-                                        .step_by(1.0),
-                                    );
-                                    if line.drag_stopped() || (line.changed() && !line.dragged())
-                                    {
-                                        self.save_ui_settings();
-                                    }
+                                            let size = ui.add(
+                                                egui::Slider::new(
+                                                    &mut self.ui_settings.editor_font_size,
+                                                    UiSettings::EDITOR_SIZE_RANGE,
+                                                )
+                                                .text("Text size")
+                                                .suffix(" pt")
+                                                .step_by(0.5),
+                                            );
+                                            if size.drag_stopped()
+                                                || (size.changed() && !size.dragged())
+                                            {
+                                                self.save_ui_settings();
+                                            }
+                                            let line = ui.add(
+                                                egui::Slider::new(
+                                                    &mut self.ui_settings.editor_line_height,
+                                                    UiSettings::EDITOR_LINE_RANGE,
+                                                )
+                                                .text("Line spacing")
+                                                .suffix(" pt")
+                                                .step_by(1.0),
+                                            );
+                                            if line.drag_stopped()
+                                                || (line.changed() && !line.dragged())
+                                            {
+                                                self.save_ui_settings();
+                                            }
 
-                                    ui.separator();
-                                    ui.label(egui::RichText::new("Preview").strong());
-                                    let preview = ui.add(
-                                        egui::Slider::new(
-                                            &mut self.ui_settings.preview_font_size,
-                                            UiSettings::PREVIEW_SIZE_RANGE,
-                                        )
-                                        .text("Text size")
-                                        .suffix(" pt")
-                                        .step_by(0.5),
-                                    );
-                                    if preview.drag_stopped()
-                                        || (preview.changed() && !preview.dragged())
-                                    {
-                                        self.save_ui_settings();
-                                    }
+                                            ui.separator();
+                                            ui.label(egui::RichText::new("Preview").strong());
+                                            ui.horizontal(|ui| {
+                                                ui.label("Font");
+                                                let mut font =
+                                                    self.ui_settings.preview_font;
+                                                ui.radio_value(
+                                                    &mut font,
+                                                    EditorFont::Sans,
+                                                    "Sans",
+                                                );
+                                                ui.radio_value(
+                                                    &mut font,
+                                                    EditorFont::Monospace,
+                                                    "Monospace",
+                                                );
+                                                if font != self.ui_settings.preview_font {
+                                                    self.ui_settings.preview_font = font;
+                                                    self.save_ui_settings();
+                                                }
+                                            });
+                                            let preview = ui.add(
+                                                egui::Slider::new(
+                                                    &mut self.ui_settings.preview_font_size,
+                                                    UiSettings::PREVIEW_SIZE_RANGE,
+                                                )
+                                                .text("Text size")
+                                                .suffix(" pt")
+                                                .step_by(0.5),
+                                            );
+                                            if preview.drag_stopped()
+                                                || (preview.changed() && !preview.dragged())
+                                            {
+                                                self.save_ui_settings();
+                                            }
 
-                                    ui.separator();
-                                    if ui.button("Reset appearance").clicked() {
-                                        self.ui_settings = UiSettings::default();
-                                        self.save_ui_settings();
-                                    }
-                                    ui.weak("Saved automatically.");
+                                            ui.separator();
+                                            if ui.button("Reset appearance").clicked() {
+                                                self.ui_settings = UiSettings::default();
+                                                self.save_ui_settings();
+                                            }
+                                            ui.weak("Saved automatically.");
+                                        })
+                                        .response;
+                                    menu_caret(ui, &response);
                                 });
                             },
                         );
@@ -405,4 +443,36 @@ fn display_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Downward caret beside the Settings menu button. It slides down and
+/// brightens on hover so the dropdown affordance is obvious.
+fn menu_caret(ui: &mut egui::Ui, button: &egui::Response) {
+    let t = ui.ctx().animate_bool_with_time(
+        egui::Id::new("settings_menu_caret"),
+        button.hovered(),
+        0.15,
+    );
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 20.0), egui::Sense::hover());
+    let color = mix_color(ui.visuals().weak_text_color(), ACCENT, t);
+    ui.painter().text(
+        rect.center() + egui::vec2(0.0, 2.0 * t),
+        egui::Align2::CENTER_CENTER,
+        icons::CARET_DOWN,
+        egui::FontId::proportional(11.0 + 1.5 * t),
+        color,
+    );
+    if t > 0.0 && t < 1.0 {
+        ui.ctx().request_repaint();
+    }
+}
+
+fn mix_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    egui::Color32::from_rgb(
+        channel(a.r(), b.r()),
+        channel(a.g(), b.g()),
+        channel(a.b(), b.b()),
+    )
 }

@@ -143,16 +143,21 @@ fn split_dest_title(group: &str) -> (&str, &str) {
 fn preview_style(ui: &egui::Ui, settings: &UiSettings) -> egui::Style {
     let mut style = (**ui.style()).clone();
     let body = settings.preview_font_size;
-    style
-        .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(body));
+    let family = match settings.preview_font {
+        EditorFont::Sans => egui::FontFamily::Proportional,
+        EditorFont::Monospace => egui::FontFamily::Monospace,
+    };
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::new(body, family.clone()),
+    );
     style.text_styles.insert(
         egui::TextStyle::Heading,
-        egui::FontId::proportional(body * 1.94),
+        egui::FontId::new(body * 1.94, family.clone()),
     );
     style.text_styles.insert(
         egui::TextStyle::Small,
-        egui::FontId::proportional(body * 0.77),
+        egui::FontId::new(body * 0.77, family.clone()),
     );
     style.text_styles.insert(
         egui::TextStyle::Monospace,

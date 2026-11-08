@@ -37,6 +37,8 @@ pub struct UiSettings {
     pub editor_font_size: f32,
     #[serde(default = "default_editor_line_height")]
     pub editor_line_height: f32,
+    #[serde(default)]
+    pub preview_font: EditorFont,
     #[serde(default = "default_preview_font_size")]
     pub preview_font_size: f32,
 }
@@ -47,6 +49,7 @@ impl Default for UiSettings {
             editor_font: EditorFont::Sans,
             editor_font_size: default_editor_font_size(),
             editor_line_height: default_editor_line_height(),
+            preview_font: EditorFont::Sans,
             preview_font_size: default_preview_font_size(),
         }
     }
@@ -123,6 +126,7 @@ mod tests {
                 editor_font: EditorFont::Monospace,
                 editor_font_size: 17.0,
                 editor_line_height: 24.0,
+                preview_font: EditorFont::Monospace,
                 preview_font_size: 18.0,
             },
         };

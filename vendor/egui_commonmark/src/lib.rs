@@ -635,6 +635,8 @@ impl FencedCodeBlock {
         });
 
         elements::newline(ui);
+        // A little breathing room before whatever follows the code block.
+        ui.add_space(8.0);
     }
 }
 
