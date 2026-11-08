@@ -167,8 +167,8 @@ depends on `libasound2` at runtime.
 - For local development, `GEMINI_API_KEY` and `GEMINI_MODEL` can be placed in a
   gitignored `.env` file.
 - `vendor/egui_commonmark` is upstream 0.14.0 with small preview rendering
-  patches (task-list bullets, line height, and code-copy UX). See its
-  `PATCH.md` before updating the dependency.
+  patches (task-list bullets, configurable line spacing, code-copy UX, and
+  spacing after code blocks). See its `PATCH.md` before updating the dependency.
 - `src/app/audio.rs` captures and resamples microphone PCM; `src/app/live.rs`
   streams it to the Gemini Live API. `src/app/templates.rs` holds the starter
   documents, and `src/rmd_cli.rs` is shared by `rmd` and `rust_notepad --rmd`.

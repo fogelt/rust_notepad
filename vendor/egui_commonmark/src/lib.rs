@@ -252,6 +252,7 @@ struct CommonMarkOptions {
     use_explicit_uri_scheme: bool,
     default_implicit_uri_scheme: String,
     alerts: AlertBundle,
+    line_spacing: f32,
 }
 
 impl Default for CommonMarkOptions {
@@ -268,6 +269,7 @@ impl Default for CommonMarkOptions {
             use_explicit_uri_scheme: false,
             default_implicit_uri_scheme: "file://".to_owned(),
             alerts: AlertBundle::gfm(),
+            line_spacing: 1.45,
         }
     }
 }
@@ -317,6 +319,12 @@ impl CommonMarkViewer {
     /// spaces.
     pub fn indentation_spaces(mut self, spaces: usize) -> Self {
         self.options.indentation_spaces = spaces;
+        self
+    }
+
+    /// Line height as a multiple of the font size. Defaults to 1.45.
+    pub fn line_spacing(mut self, spacing: f32) -> Self {
+        self.options.line_spacing = spacing.clamp(0.8, 3.0);
         self
     }
 
@@ -549,7 +557,7 @@ impl Link {
             );
         }
         layout_job.wrap.max_width = ui.available_width();
-        apply_line_height(&mut layout_job);
+        apply_line_height(1.45, &mut layout_job);
         if cache.link_hooks().contains_key(&destination) {
             let ui_link = ui.link(layout_job);
             if ui_link.clicked() || ui_link.middle_clicked() {
@@ -563,10 +571,11 @@ impl Link {
 
 /// Give preview text a little more breathing room than egui's font metrics
 /// provide, without changing the font size.
-pub(crate) fn apply_line_height(job: &mut LayoutJob) {
+pub(crate) fn apply_line_height(line_spacing: f32, job: &mut LayoutJob) {
+    let line_spacing = line_spacing.clamp(0.8, 3.0);
     for section in &mut job.sections {
         let size = section.format.font_id.size;
-        section.format.line_height = Some((size * 1.45).min(size + 8.0));
+        section.format.line_height = Some(size * line_spacing);
     }
 }
 
@@ -628,6 +637,8 @@ impl FencedCodeBlock {
             let mut layout = |ui: &Ui, string: &str, wrap_width: f32| {
                 let mut job = self.syntax_highlighting(cache, options, &self.lang, ui, string);
                 job.wrap.max_width = wrap_width;
+                // Code blocks follow the preview line-spacing setting too.
+                crate::apply_line_height(options.line_spacing, &mut job);
                 ui.fonts(|f| f.layout_job(job))
             };
 

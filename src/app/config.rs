@@ -28,6 +28,10 @@ fn default_preview_font_size() -> f32 {
     15.5
 }
 
+fn default_preview_line_spacing() -> f32 {
+    1.45
+}
+
 /// Appearance settings, all optional so older config files keep loading.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiSettings {
@@ -41,6 +45,8 @@ pub struct UiSettings {
     pub preview_font: EditorFont,
     #[serde(default = "default_preview_font_size")]
     pub preview_font_size: f32,
+    #[serde(default = "default_preview_line_spacing")]
+    pub preview_line_spacing: f32,
 }
 
 impl Default for UiSettings {
@@ -51,6 +57,7 @@ impl Default for UiSettings {
             editor_line_height: default_editor_line_height(),
             preview_font: EditorFont::Sans,
             preview_font_size: default_preview_font_size(),
+            preview_line_spacing: default_preview_line_spacing(),
         }
     }
 }
@@ -59,6 +66,7 @@ impl UiSettings {
     pub const EDITOR_SIZE_RANGE: std::ops::RangeInclusive<f32> = 12.0..=24.0;
     pub const EDITOR_LINE_RANGE: std::ops::RangeInclusive<f32> = 16.0..=30.0;
     pub const PREVIEW_SIZE_RANGE: std::ops::RangeInclusive<f32> = 13.0..=22.0;
+    pub const PREVIEW_LINE_RANGE: std::ops::RangeInclusive<f32> = 1.1..=2.0;
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -128,6 +136,7 @@ mod tests {
                 editor_line_height: 24.0,
                 preview_font: EditorFont::Monospace,
                 preview_font_size: 18.0,
+                preview_line_spacing: 1.6,
             },
         };
         let json = serde_json::to_string(&cfg).unwrap();

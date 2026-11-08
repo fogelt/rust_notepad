@@ -94,6 +94,8 @@ pub struct NotepadApp {
     pub toast: Option<Toast>,
     /// Persisted appearance settings (font family, sizes, line spacing).
     pub ui_settings: UiSettings,
+    /// Whether the Settings menu popup is open.
+    pub settings_menu_open: bool,
     /// Last seen monitor size / DPI, to detect screen changes.
     pub last_monitor_size: Option<[f32; 2]>,
     pub last_native_ppp: Option<f32>,
@@ -204,6 +206,7 @@ impl Default for NotepadApp {
             dictation_stream: None,
             toast: None,
             ui_settings: stored.ui.clone(),
+            settings_menu_open: false,
             last_monitor_size: None,
             last_native_ppp: None,
             window_title: None,

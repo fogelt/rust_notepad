@@ -453,11 +453,11 @@ impl CommonMarkViewerInternal {
             pulldown_cmark::Event::Start(tag) => self.start_tag(ui, tag, options),
             pulldown_cmark::Event::End(tag) => self.end_tag(ui, tag, cache, options, max_width),
             pulldown_cmark::Event::Text(text) => {
-                self.event_text(text, ui);
+                self.event_text(text, ui, options);
             }
             pulldown_cmark::Event::Code(text) => {
                 self.text_style.code = true;
-                self.event_text(text, ui);
+                self.event_text(text, ui, options);
                 self.text_style.code = false;
             }
             pulldown_cmark::Event::InlineHtml(_) => {}
@@ -490,7 +490,7 @@ impl CommonMarkViewerInternal {
         }
     }
 
-    fn event_text(&mut self, text: CowStr, ui: &mut Ui) {
+    fn event_text(&mut self, text: CowStr, ui: &mut Ui, options: &CommonMarkOptions) {
         let rich_text = self.text_style.to_richtext(ui, &text);
         if let Some(image) = &mut self.image {
             image.alt_text.push(rich_text);
@@ -507,7 +507,7 @@ impl CommonMarkViewerInternal {
                 egui::Align::LEFT,
             );
             job.wrap.max_width = ui.available_width();
-            crate::apply_line_height(&mut job);
+            crate::apply_line_height(options.line_spacing, &mut job);
             ui.label(job);
         }
     }

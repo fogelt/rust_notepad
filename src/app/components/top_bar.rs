@@ -239,110 +239,7 @@ impl NotepadApp {
                         ui.allocate_ui_with_layout(
                             egui::vec2(104.0, 30.0),
                             egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                            |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 2.0;
-                                    let response = ui
-                                        .menu_button("Settings", |ui| {
-                                            ui.set_min_width(250.0);
-
-                                            ui.label(egui::RichText::new("Editor").strong());
-                                            ui.horizontal(|ui| {
-                                                ui.label("Font");
-                                                let mut font =
-                                                    self.ui_settings.editor_font;
-                                                ui.radio_value(
-                                                    &mut font,
-                                                    EditorFont::Sans,
-                                                    "Sans",
-                                                );
-                                                ui.radio_value(
-                                                    &mut font,
-                                                    EditorFont::Monospace,
-                                                    "Monospace",
-                                                );
-                                                if font != self.ui_settings.editor_font {
-                                                    self.ui_settings.editor_font = font;
-                                                    self.save_ui_settings();
-                                                }
-                                            });
-
-                                            let size = ui.add(
-                                                egui::Slider::new(
-                                                    &mut self.ui_settings.editor_font_size,
-                                                    UiSettings::EDITOR_SIZE_RANGE,
-                                                )
-                                                .text("Text size")
-                                                .suffix(" pt")
-                                                .step_by(0.5),
-                                            );
-                                            if size.drag_stopped()
-                                                || (size.changed() && !size.dragged())
-                                            {
-                                                self.save_ui_settings();
-                                            }
-                                            let line = ui.add(
-                                                egui::Slider::new(
-                                                    &mut self.ui_settings.editor_line_height,
-                                                    UiSettings::EDITOR_LINE_RANGE,
-                                                )
-                                                .text("Line spacing")
-                                                .suffix(" pt")
-                                                .step_by(1.0),
-                                            );
-                                            if line.drag_stopped()
-                                                || (line.changed() && !line.dragged())
-                                            {
-                                                self.save_ui_settings();
-                                            }
-
-                                            ui.separator();
-                                            ui.label(egui::RichText::new("Preview").strong());
-                                            ui.horizontal(|ui| {
-                                                ui.label("Font");
-                                                let mut font =
-                                                    self.ui_settings.preview_font;
-                                                ui.radio_value(
-                                                    &mut font,
-                                                    EditorFont::Sans,
-                                                    "Sans",
-                                                );
-                                                ui.radio_value(
-                                                    &mut font,
-                                                    EditorFont::Monospace,
-                                                    "Monospace",
-                                                );
-                                                if font != self.ui_settings.preview_font {
-                                                    self.ui_settings.preview_font = font;
-                                                    self.save_ui_settings();
-                                                }
-                                            });
-                                            let preview = ui.add(
-                                                egui::Slider::new(
-                                                    &mut self.ui_settings.preview_font_size,
-                                                    UiSettings::PREVIEW_SIZE_RANGE,
-                                                )
-                                                .text("Text size")
-                                                .suffix(" pt")
-                                                .step_by(0.5),
-                                            );
-                                            if preview.drag_stopped()
-                                                || (preview.changed() && !preview.dragged())
-                                            {
-                                                self.save_ui_settings();
-                                            }
-
-                                            ui.separator();
-                                            if ui.button("Reset appearance").clicked() {
-                                                self.ui_settings = UiSettings::default();
-                                                self.save_ui_settings();
-                                            }
-                                            ui.weak("Saved automatically.");
-                                        })
-                                        .response;
-                                    menu_caret(ui, &response);
-                                });
-                            },
+                            |ui| self.show_settings_menu(ui),
                         );
                         ui.separator();
                         // Center the segmented tabs in the full bar, not just
@@ -429,6 +326,124 @@ impl NotepadApp {
         }
     }
 
+    /// Custom Settings menu: the caret lives inside the button and flips when
+    /// the popup is open.
+    fn show_settings_menu(&mut self, ui: &mut egui::Ui) {
+        let (button_rect, response) = settings_menu_button(ui, self.settings_menu_open);
+        if response.clicked() {
+            self.settings_menu_open = !self.settings_menu_open;
+        }
+        if !self.settings_menu_open {
+            return;
+        }
+
+        let frame = egui::Frame::menu(ui.style());
+        let margin = frame.total_margin();
+        let position = button_rect.left_bottom() + egui::vec2(-margin.left, 4.0);
+        let area = egui::Area::new(egui::Id::new("settings_menu_popup"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(position)
+            .constrain(true)
+            .show(ui.ctx(), |ui| {
+                frame.show(ui, |ui| {
+                    ui.set_min_width(250.0);
+                    self.show_settings_menu_contents(ui);
+                });
+            });
+
+        let popup_rect = area.response.rect;
+        let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
+        let clicked_outside = ui.ctx().input(|i| i.pointer.any_click())
+            && pointer.is_some_and(|pos| !popup_rect.contains(pos) && !button_rect.contains(pos));
+        if clicked_outside || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.settings_menu_open = false;
+        }
+    }
+
+    fn show_settings_menu_contents(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Editor").strong());
+        ui.horizontal(|ui| {
+            ui.label("Font");
+            let mut font = self.ui_settings.editor_font;
+            ui.radio_value(&mut font, EditorFont::Sans, "Sans");
+            ui.radio_value(&mut font, EditorFont::Monospace, "Monospace");
+            if font != self.ui_settings.editor_font {
+                self.ui_settings.editor_font = font;
+                self.save_ui_settings();
+            }
+        });
+
+        let size = ui.add(
+            egui::Slider::new(
+                &mut self.ui_settings.editor_font_size,
+                UiSettings::EDITOR_SIZE_RANGE,
+            )
+            .text("Text size")
+            .suffix(" pt")
+            .step_by(0.5),
+        );
+        if size.drag_stopped() || (size.changed() && !size.dragged()) {
+            self.save_ui_settings();
+        }
+        let line = ui.add(
+            egui::Slider::new(
+                &mut self.ui_settings.editor_line_height,
+                UiSettings::EDITOR_LINE_RANGE,
+            )
+            .text("Line spacing")
+            .suffix(" pt")
+            .step_by(1.0),
+        );
+        if line.drag_stopped() || (line.changed() && !line.dragged()) {
+            self.save_ui_settings();
+        }
+
+        ui.separator();
+        ui.label(egui::RichText::new("Preview").strong());
+        ui.horizontal(|ui| {
+            ui.label("Font");
+            let mut font = self.ui_settings.preview_font;
+            ui.radio_value(&mut font, EditorFont::Sans, "Sans");
+            ui.radio_value(&mut font, EditorFont::Monospace, "Monospace");
+            if font != self.ui_settings.preview_font {
+                self.ui_settings.preview_font = font;
+                self.save_ui_settings();
+            }
+        });
+        let preview = ui.add(
+            egui::Slider::new(
+                &mut self.ui_settings.preview_font_size,
+                UiSettings::PREVIEW_SIZE_RANGE,
+            )
+            .text("Text size")
+            .suffix(" pt")
+            .step_by(0.5),
+        );
+        if preview.drag_stopped() || (preview.changed() && !preview.dragged()) {
+            self.save_ui_settings();
+        }
+        let preview_line = ui.add(
+            egui::Slider::new(
+                &mut self.ui_settings.preview_line_spacing,
+                UiSettings::PREVIEW_LINE_RANGE,
+            )
+            .text("Line spacing")
+            .suffix("×")
+            .max_decimals(2)
+            .step_by(0.05),
+        );
+        if preview_line.drag_stopped() || (preview_line.changed() && !preview_line.dragged()) {
+            self.save_ui_settings();
+        }
+
+        ui.separator();
+        if ui.button("Reset appearance").clicked() {
+            self.ui_settings = UiSettings::default();
+            self.save_ui_settings();
+        }
+        ui.weak("Saved automatically.");
+    }
+
     /// Persist appearance settings without touching the assistant credentials.
     fn save_ui_settings(&mut self) {
         let mut cfg = crate::app::config::load();
@@ -445,34 +460,80 @@ fn display_name(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Downward caret beside the Settings menu button. It slides down and
-/// brightens on hover so the dropdown affordance is obvious.
-fn menu_caret(ui: &mut egui::Ui, button: &egui::Response) {
-    let t = ui.ctx().animate_bool_with_time(
-        egui::Id::new("settings_menu_caret"),
-        button.hovered(),
-        0.15,
+/// Settings menu button with the caret drawn inside its hover background.
+fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Response) {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley =
+        ui.painter()
+            .layout_no_wrap(String::from("Settings"), font, egui::Color32::PLACEHOLDER);
+    let padding = egui::vec2(8.0, 3.0);
+    let arrow_space = 18.0;
+    let size = egui::vec2(
+        galley.size().x + padding.x * 2.0 + arrow_space,
+        (galley.size().y + padding.y * 2.0).max(20.0),
     );
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 20.0), egui::Sense::hover());
-    let color = mix_color(ui.visuals().weak_text_color(), ACCENT, t);
-    ui.painter().text(
-        rect.center() + egui::vec2(0.0, 2.0 * t),
-        egui::Align2::CENTER_CENTER,
-        icons::CARET_DOWN,
-        egui::FontId::proportional(11.0 + 1.5 * t),
-        color,
-    );
-    if t > 0.0 && t < 1.0 {
-        ui.ctx().request_repaint();
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let hovered = response.hovered();
+    let visuals = if open {
+        ui.style().visuals.widgets.open
+    } else if hovered {
+        ui.style().visuals.widgets.hovered
+    } else {
+        ui.style().visuals.widgets.inactive
+    };
+
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(
+            rect,
+            visuals.rounding,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+        );
+        let text_color = visuals.fg_stroke.color;
+        ui.painter().galley(
+            egui::pos2(
+                rect.left() + padding.x,
+                rect.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            text_color,
+        );
+
+        let flip =
+            ui.ctx()
+                .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
+        draw_chevron(
+            ui,
+            egui::pos2(rect.right() - padding.x - 5.0, rect.center().y),
+            flip,
+            if open || hovered { ACCENT } else { text_color },
+        );
+        if flip > 0.0 && flip < 1.0 {
+            ui.ctx().request_repaint();
+        }
     }
+
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, "Settings"));
+    (rect, response)
 }
 
-fn mix_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
-    let t = t.clamp(0.0, 1.0);
-    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    egui::Color32::from_rgb(
-        channel(a.r(), b.r()),
-        channel(a.g(), b.g()),
-        channel(a.b(), b.b()),
-    )
+/// Draw a small chevron pointing down at `flip = 0` and up at `flip = 1`.
+fn draw_chevron(ui: &egui::Ui, center: egui::Pos2, flip: f32, color: egui::Color32) {
+    let angle = std::f32::consts::PI * flip;
+    let (sin, cos) = angle.sin_cos();
+    let local = [
+        egui::vec2(-4.0, -1.5),
+        egui::vec2(0.0, 2.5),
+        egui::vec2(4.0, -1.5),
+    ];
+    let rotate = |point: egui::Vec2| {
+        egui::pos2(
+            center.x + point.x * cos - point.y * sin,
+            center.y + point.x * sin + point.y * cos,
+        )
+    };
+    let points = [rotate(local[0]), rotate(local[1]), rotate(local[2])];
+    let stroke = egui::Stroke::new(1.6_f32, color);
+    ui.painter().line_segment([points[0], points[1]], stroke);
+    ui.painter().line_segment([points[1], points[2]], stroke);
 }
