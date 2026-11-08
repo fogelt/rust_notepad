@@ -13,6 +13,44 @@ pub use models::NotepadApp;
 use theme::WINDOW_MIN_SIZE;
 
 impl NotepadApp {
+    /// Grow the startup window to a comfortable fraction of the monitor,
+    /// keeping it centered where the OS opened it. Runs once.
+    fn apply_initial_window_size(&mut self, ctx: &egui::Context) {
+        if self.initial_window_sized {
+            return;
+        }
+        let (monitor, inner, outer) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (
+                viewport.monitor_size,
+                viewport.inner_rect,
+                viewport.outer_rect,
+            )
+        });
+        let (Some(monitor), Some(inner), Some(outer)) = (monitor, inner, outer) else {
+            return;
+        };
+        if monitor.x <= 0.0 || monitor.y <= 0.0 {
+            return;
+        }
+        self.initial_window_sized = true;
+
+        let minimum = egui::vec2(WINDOW_MIN_SIZE[0], WINDOW_MIN_SIZE[1]);
+        let target = egui::vec2(
+            (monitor.x * 0.8).clamp(900.0, 1480.0),
+            (monitor.y * 0.8).clamp(600.0, 980.0),
+        )
+        .max(minimum);
+
+        // Keep the centre the OS chose for the initial min-size window.
+        let chrome = outer.size() - inner.size();
+        let chrome = egui::vec2(chrome.x.max(0.0), chrome.y.max(0.0));
+        let target_outer = target + chrome;
+        let position = outer.center() - target_outer * 0.5;
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(position));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target));
+    }
+
     /// Shrink the window back to the minimum size when it moves to a
     /// different monitor (or the DPI changes), instead of letting the OS
     /// resize jump it around. Fires once per change, never every frame.
@@ -111,6 +149,7 @@ impl NotepadApp {
 
 impl eframe::App for NotepadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.apply_initial_window_size(ctx);
         self.snap_to_min_on_monitor_change(ctx);
         self.enforce_min_window_size(ctx);
         self.update_window_title(ctx);

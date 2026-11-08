@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 /// A small, curated set of models that work well for Markdown editing and
-/// document dictation. Showing the whole live model catalog is overwhelming
-/// and includes many unrelated models.
+/// dropped-file transcription. Showing the whole live model catalog is
+/// overwhelming and includes many unrelated models.
 pub struct ModelChoice {
     pub id: &'static str,
     pub label: &'static str,
@@ -1066,7 +1066,7 @@ impl NotepadApp {
         );
 
         ui.add_space(6.0);
-        ui.label(egui::RichText::new("Model").strong());
+        ui.label(egui::RichText::new("Assistant model").strong());
         let current = self.chat_model.clone();
         egui::ComboBox::from_id_source("gemini_model")
             .width(ui.available_width())
@@ -1088,7 +1088,11 @@ impl NotepadApp {
                     );
                 }
             });
-        ui.weak("Only models that work well for Markdown edits and dictation are listed.");
+        ui.weak(format!(
+            "The selected model handles assistant edits and dropped audio files. \
+             Live dictation always uses {}.",
+            crate::app::live::LIVE_MODEL
+        ));
 
         ui.add_space(4.0);
     }
