@@ -168,6 +168,9 @@ impl NotepadApp {
                     // Centered so the shorter File button aligns with
                     // the fixed-height tabs instead of riding high.
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let available_width = ui.available_width();
+                        let tabs_width = 3.0 * 92.0 + 4.0;
+                        let start_x = ui.cursor().min.x;
                         // Fixed box like the tabs so the labels share one
                         // baseline.
                         ui.allocate_ui_with_layout(
@@ -229,6 +232,11 @@ impl NotepadApp {
                             },
                         );
                         ui.separator();
+                        // Center the segmented tabs in the full bar, not just
+                        // in the space remaining after the File menu.
+                        let consumed = ui.cursor().min.x - start_x;
+                        let tabs_left = ((available_width - tabs_width) * 0.5).max(consumed);
+                        ui.add_space(tabs_left - consumed);
                         // A single segmented container keeps the view tabs
                         // grouped and lets the active panel carry the accent.
                         egui::Frame::none()
