@@ -1,10 +1,11 @@
 use crate::app::NotepadApp;
-use crate::app::theme::{BG_ELEVATED, BORDER};
+use crate::app::theme::BG_ELEVATED;
 use eframe::egui;
 
 impl NotepadApp {
     pub fn show_bottom_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
+            .show_separator_line(false)
             .frame(
                 egui::Frame::none()
                     .fill(BG_ELEVATED)
@@ -16,14 +17,6 @@ impl NotepadApp {
                     }),
             )
             .show(ctx, |ui| {
-                // A hairline separates the footer from the document without
-                // drawing a full border around the panel.
-                ui.painter().hline(
-                    ui.max_rect().x_range(),
-                    ui.max_rect().top(),
-                    egui::Stroke::new(1.0_f32, BORDER),
-                );
-
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::Label::new(egui::RichText::new(&self.status_message).weak())

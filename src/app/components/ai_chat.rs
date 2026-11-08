@@ -889,7 +889,7 @@ impl NotepadApp {
             return;
         }
 
-        let rect = ctx.screen_rect();
+        let rect = ctx.screen_rect().shrink(16.0);
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::new("audio_drop_overlay"),
@@ -897,10 +897,10 @@ impl NotepadApp {
         painter.rect_filled(
             rect,
             0.0,
-            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 34),
+            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 20),
         );
 
-        let border = rect.shrink(8.0);
+        let border = rect.shrink(1.0);
         let stroke = egui::Stroke::new(2.0_f32, ACCENT);
         let corners = [
             border.left_top(),
@@ -918,14 +918,7 @@ impl NotepadApp {
             egui::FontId::proportional(19.0),
             ACCENT_TEXT,
         );
-        let chip =
-            egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(30.0, 18.0));
-        painter.rect_filled(
-            chip,
-            9.0,
-            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 235),
-        );
-        painter.galley(chip.center() - galley.size() * 0.5, galley, ACCENT_TEXT);
+        painter.galley(rect.center() - galley.size() * 0.5, galley, ACCENT_TEXT);
     }
 
     /// Handle audio files dropped anywhere on the window: transcribe the first
