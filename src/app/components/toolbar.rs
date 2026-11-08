@@ -362,11 +362,11 @@ impl NotepadApp {
             .frame(
                 egui::Frame::none()
                     .fill(crate::app::theme::BG_ELEVATED)
-                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+                    .inner_margin(egui::Margin::symmetric(8.0, 5.0)),
             )
             .show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().item_spacing.x = 6.0;
                     ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
 
                     // Inline formatting
