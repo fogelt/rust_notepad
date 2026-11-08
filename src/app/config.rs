@@ -149,7 +149,7 @@ mod tests {
     fn roundtrips_through_json() {
         let cfg = AppConfig {
             api_key: "AIza-test".to_string(),
-            model: "gemini-2.5-flash".to_string(),
+            model: "gemini-3.8-flash".to_string(),
             ui: UiSettings {
                 editor_font: EditorFont::Monospace,
                 editor_font_size: 17.0,
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn old_config_without_ui_uses_defaults() {
         let cfg: AppConfig =
-            serde_json::from_str(r#"{"api_key":"AIza-test","model":"gemini-2.5-flash"}"#).unwrap();
+            serde_json::from_str(r#"{"api_key":"AIza-test","model":"gemini-3.8-flash"}"#).unwrap();
         assert_eq!(cfg.ui, UiSettings::default());
         assert_eq!(cfg.api_key, "AIza-test");
     }

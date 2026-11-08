@@ -3,7 +3,8 @@ use crate::app::live::LiveEvent;
 use crate::app::models::{DictationEvent, DictationStream};
 use crate::app::theme::{
     ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
-    MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, panel_frame, panel_header,
+    CHEVRON_ANIMATION_TIME, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, TEXT, draw_chevron,
+    panel_frame, panel_header,
 };
 use eframe::egui;
 use egui::text::CCursorRange;
@@ -25,19 +26,19 @@ pub struct ModelChoice {
 
 pub const MODELS: &[ModelChoice] = &[
     ModelChoice {
-        id: "gemini-2.5-flash",
-        label: "Gemini 2.5 Flash",
+        id: "gemini-3.8-flash",
+        label: "Gemini 3.8 Flash",
         note: "Recommended",
     },
     ModelChoice {
-        id: "gemini-2.5-flash-lite",
-        label: "Gemini 2.5 Flash Lite",
+        id: "gemini-3.5-flash-lite",
+        label: "Gemini 3.5 Flash Lite",
         note: "Fastest",
     },
     ModelChoice {
-        id: "gemini-3.1-flash-lite",
-        label: "Gemini 3.1 Flash Lite",
-        note: "Higher free limit",
+        id: "gemini-4-argon",
+        label: "Gemini 4 Argon",
+        note: "Most capable · Paid",
     },
 ];
 
@@ -412,23 +413,24 @@ fn insert_at_cursor(app: &mut NotepadApp, ctx: &egui::Context, snippet: &str) {
 
 impl NotepadApp {
     fn poll_chat(&mut self) {
-        if let Some(rx) = self.chat_rx.as_ref()
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(text) => {
-                    self.chat_response = text;
-                    self.chat_error = None;
-                    self.status_message = String::from("Gemini suggestion ready.");
-                }
-                Err(err) => {
-                    self.chat_error = Some(err);
-                    self.status_message = String::from("Gemini request failed.");
-                }
+        let result = self.chat_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        let Some(result) = result else {
+            return;
+        };
+        self.chat_rx = None;
+        match result {
+            Ok(text) => {
+                self.chat_response = text;
+                self.status_message = String::from("Gemini suggestion ready.");
             }
-            self.chat_rx = None;
-            self.chat_busy = false;
+            Err(err) => {
+                // Server errors belong in a toast; the suggestion card is for
+                // the model's output, not transport failures.
+                self.status_message = String::from("Gemini request failed.");
+                self.push_toast(err, true);
+            }
         }
+        self.chat_busy = false;
     }
 
     /// Poll recording and transcription for document dictation. Called once
@@ -970,20 +972,18 @@ impl NotepadApp {
         }
         let api_key = self.api_key();
         if api_key.is_empty() {
-            self.chat_error = Some("No API key: add one in Assistant settings.".to_string());
+            self.report_error("No API key: add one in Assistant settings.");
             return;
         }
         let model = self.chat_model.trim().to_string();
         if model.is_empty() {
-            self.chat_error =
-                Some("No model selected. Pick one from the dropdown above.".to_string());
+            self.report_error("No model selected. Pick one from the dropdown above.");
             return;
         }
         let prompt = build_prompt(&instruction, &self.content);
         let (tx, rx) = mpsc::channel();
         self.chat_rx = Some(rx);
         self.chat_busy = true;
-        self.chat_error = None;
         self.chat_input.clear();
         self.status_message = String::from("Asking Gemini...");
         std::thread::spawn(move || {
@@ -991,11 +991,23 @@ impl NotepadApp {
         });
     }
 
+    /// Persist the assistant key/model as soon as they change. There is no
+    /// separate save step.
+    fn save_assistant_settings(&mut self) {
+        let mut cfg = crate::app::config::load();
+        cfg.api_key = self.chat_api_key.trim().to_string();
+        cfg.model = self.chat_model.trim().to_string();
+        if let Err(err) = crate::app::config::save(&cfg) {
+            self.report_error(err);
+        }
+    }
+
     /// API key and model live in a collapsible settings block so the
     /// instruction + suggestion stay front and center.
     fn show_assistant_settings(&mut self, ui: &mut egui::Ui) {
         ui.add_space(2.0);
         ui.label(egui::RichText::new("API key").strong());
+        let mut key_changed = false;
         ui.horizontal(|ui| {
             // Eye toggle lives inside the field, on the left; the widened
             // text margin keeps typed text clear.
@@ -1008,6 +1020,7 @@ impl NotepadApp {
                     .desired_width(f32::INFINITY)
                     .margin(text_margin),
             );
+            key_changed = field.changed();
             let eye_rect = egui::Rect::from_min_size(
                 field.rect.left_top() + egui::vec2(5.0, (field.rect.height() - 20.0) / 2.0),
                 egui::vec2(20.0, 20.0),
@@ -1033,26 +1046,13 @@ impl NotepadApp {
                 self.chat_show_key = !self.chat_show_key;
             }
         });
+        if key_changed {
+            self.save_assistant_settings();
+        }
         if !self.chat_api_key.trim().is_empty() && !self.chat_api_key.trim().starts_with("AIza") {
             ui.weak("Keys usually start with AIza — check for extra spaces.");
         }
-        ui.horizontal(|ui| {
-            if ui.button("Save key & model").clicked() {
-                let mut cfg = crate::app::config::load();
-                cfg.api_key = self.chat_api_key.trim().to_string();
-                cfg.model = self.chat_model.trim().to_string();
-                match crate::app::config::save(&cfg) {
-                    Ok(path) => {
-                        self.chat_api_key = cfg.api_key;
-                        self.chat_error = None;
-                        self.status_message =
-                            format!("Assistant settings saved to {}.", path.display());
-                    }
-                    Err(err) => self.chat_error = Some(err),
-                }
-            }
-            ui.weak("Stored locally.");
-        });
+        ui.weak("Saved automatically on this device.");
         ui.hyperlink_to(
             "Get a Gemini API key",
             "https://aistudio.google.com/api-keys",
@@ -1064,6 +1064,19 @@ impl NotepadApp {
         egui::ComboBox::from_id_source("gemini_model")
             .width(ui.available_width())
             .selected_text(model_label(&self.chat_model))
+            .icon(|ui, rect, visuals, is_open, _| {
+                let flip = ui.ctx().animate_bool_with_time(
+                    egui::Id::new("assistant_model_chevron"),
+                    is_open,
+                    CHEVRON_ANIMATION_TIME,
+                );
+                let color = if is_open || ui.rect_contains_pointer(rect) {
+                    ACCENT
+                } else {
+                    visuals.fg_stroke.color
+                };
+                draw_chevron(ui, rect.center(), flip, color);
+            })
             .show_ui(ui, |ui| {
                 for model in MODELS {
                     ui.selectable_value(
@@ -1081,6 +1094,9 @@ impl NotepadApp {
                     );
                 }
             });
+        if self.chat_model != current {
+            self.save_assistant_settings();
+        }
         ui.weak(format!(
             "The selected model handles assistant edits and dropped audio files. \
              Live dictation always uses {}.",
@@ -1132,10 +1148,32 @@ impl NotepadApp {
                     .show(ui, |ui| {
                         ui.add_space(2.0);
 
+                        let settings_id =
+                            ui.make_persistent_id(egui::Id::new("assistant_settings"));
                         egui::CollapsingHeader::new(
                             egui::RichText::new(format!("{} Settings", icons::GEAR_SIX)).strong(),
                         )
+                        .id_source("assistant_settings")
                         .default_open(settings_open)
+                        .icon(move |ui, openness, response| {
+                            let open = egui::collapsing_header::CollapsingState::load(
+                                ui.ctx(),
+                                settings_id,
+                            )
+                            .map_or(openness >= 0.5, |state| state.is_open());
+                            let flip = ui.ctx().animate_bool_with_time(
+                                settings_id.with("chevron"),
+                                open,
+                                CHEVRON_ANIMATION_TIME,
+                            );
+                            let visuals = ui.style().interact(response);
+                            let color = if response.hovered() || open {
+                                ACCENT
+                            } else {
+                                visuals.fg_stroke.color
+                            };
+                            draw_chevron(ui, response.rect.center(), flip, color);
+                        })
                         .show(ui, |ui| self.show_assistant_settings(ui));
 
                         ui.add_space(2.0);
@@ -1171,26 +1209,63 @@ impl NotepadApp {
                             !self.chat_busy && !self.chat_input.trim().is_empty();
 
                         ui.horizontal_wrapped(|ui| {
+                            let (send_text, send_color, send_fill) = if self.chat_busy {
+                                // The leading spaces reserve room for the
+                                // spinner that replaces the plane icon.
+                                (
+                                    String::from("       Thinking…"),
+                                    TEXT,
+                                    ui.visuals().widgets.inactive.weak_bg_fill,
+                                )
+                            } else {
+                                (
+                                    format!("{} Send  ({send_shortcut})", icons::PAPER_PLANE_TILT),
+                                    ACCENT_TEXT,
+                                    ACCENT,
+                                )
+                            };
                             let send = egui::Button::new(
-                                egui::RichText::new(format!(
-                                    "{} Send  ({send_shortcut})",
-                                    icons::PAPER_PLANE_TILT
-                                ))
-                                .strong()
-                                .color(ACCENT_TEXT),
+                                egui::RichText::new(&send_text)
+                                    .strong()
+                                    .color(send_color),
                             )
-                            .fill(ACCENT);
-                            if ui
+                            .fill(send_fill);
+                            let response = ui
                                 .add_enabled(can_send, send)
-                                .on_hover_text("Send the instruction to Gemini")
-                                .clicked()
-                            {
-                                self.send_chat();
-                            }
+                                .on_hover_text("Send the instruction to Gemini");
 
                             if self.chat_busy {
-                                ui.spinner();
-                                ui.label("Thinking…");
+                                // A bare spinner sits where the plane icon was.
+                                let galley = egui::WidgetText::from(
+                                    egui::RichText::new(&send_text)
+                                        .strong()
+                                        .color(send_color),
+                                )
+                                .into_galley(
+                                    ui,
+                                    Some(false),
+                                    f32::INFINITY,
+                                    egui::TextStyle::Button,
+                                );
+                                let text_rect = ui.layout().align_size_within_rect(
+                                    galley.size(),
+                                    response.rect.shrink2(ui.spacing().button_padding),
+                                );
+                                let spinner_center = egui::pos2(
+                                    text_rect.left() + 7.0,
+                                    response.rect.center().y,
+                                );
+                                egui::Spinner::new().size(16.0).color(ACCENT).paint_at(
+                                    ui,
+                                    egui::Rect::from_center_size(
+                                        spinner_center,
+                                        egui::vec2(16.0, 16.0),
+                                    ),
+                                );
+                            }
+
+                            if response.clicked() {
+                                self.send_chat();
                             }
                         });
 
@@ -1200,11 +1275,6 @@ impl NotepadApp {
                             ui.weak(
                                 "Use the microphone in the editor toolbar to dictate into the document.",
                             );
-                        }
-
-                        if let Some(err) = self.chat_error.clone() {
-                            let err_color = ui.visuals().error_fg_color;
-                            ui.colored_label(err_color, err);
                         }
 
                     });
@@ -1227,22 +1297,22 @@ impl NotepadApp {
                 });
                 ui.add_space(4.0);
 
-                let card_height = ui.available_height().max(140.0);
                 egui::Frame::none()
                     .fill(BG_ELEVATED)
                     .rounding(8.0)
                     .stroke(egui::Stroke::new(1.0_f32, BORDER))
                     .inner_margin(egui::Margin::same(10.0))
                     .show(ui, |ui| {
-                        ui.set_min_height((card_height - 20.0).max(100.0));
-                        let actions_height = if self.chat_response.is_empty() { 0.0 } else { 36.0 };
-                        let body_height = (ui.available_height() - actions_height).max(60.0);
+                        let inner_height = ui.available_height();
+                        ui.set_min_height(inner_height);
                         if self.chat_response.is_empty() {
                             ui.allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(), body_height),
+                                egui::vec2(ui.available_width(), ui.available_height()),
                                 egui::Layout::top_down(egui::Align::Center),
                                 |ui| {
-                                    ui.add_space(((body_height - 46.0) * 0.5).max(8.0));
+                                    ui.add_space(
+                                        ((ui.available_height() - 46.0) * 0.5).max(8.0),
+                                    );
                                     ui.label(
                                         egui::RichText::new(icons::SPARKLE)
                                             .size(22.0)
@@ -1259,22 +1329,44 @@ impl NotepadApp {
                                 },
                             );
                         } else {
-                            egui::ScrollArea::vertical()
-                                .auto_shrink([false; 2])
-                                .show(ui, |ui| {
-                                    ui.add_sized(
-                                        egui::vec2(ui.available_width(), body_height),
-                                        egui::TextEdit::multiline(&mut self.chat_response)
-                                            .desired_width(f32::INFINITY)
-                                            .frame(false)
-                                            .code_editor(),
-                                    );
-                                });
-                            ui.add_space(6.0);
+                            // Reserve the action row and a small gap, then let
+                            // the response take the rest. The fixed math keeps
+                            // the card inside the panel at every height.
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            let action_height = 30.0;
+                            let gap = 6.0;
+                            let body_height = (inner_height - action_height - gap).max(0.0);
+
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), body_height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    egui::ScrollArea::vertical()
+                                        .auto_shrink([false; 2])
+                                        .max_height(body_height)
+                                        .show(ui, |ui| {
+                                            ui.add_sized(
+                                                egui::vec2(
+                                                    ui.available_width(),
+                                                    body_height,
+                                                ),
+                                                egui::TextEdit::multiline(
+                                                    &mut self.chat_response,
+                                                )
+                                                .desired_width(f32::INFINITY)
+                                                .frame(false)
+                                                .code_editor(),
+                                            );
+                                        });
+                                },
+                            );
+                            ui.add_space(gap);
+
                             let dictating = self.is_dictating();
-                            ui.horizontal_wrapped(|ui| {
+                            ui.horizontal(|ui| {
                                 if ui
-                                    .add_enabled(!dictating, egui::Button::new("Insert at cursor"))
+                                    .add_enabled(!dictating, egui::Button::new("Insert"))
+                                    .on_hover_text("Insert at cursor")
                                     .clicked()
                                 {
                                     let snippet = self.chat_response.clone();
@@ -1282,7 +1374,8 @@ impl NotepadApp {
                                     self.note_content_changed();
                                 }
                                 if ui
-                                    .add_enabled(!dictating, egui::Button::new("Replace document"))
+                                    .add_enabled(!dictating, egui::Button::new("Replace"))
+                                    .on_hover_text("Replace document")
                                     .clicked()
                                 {
                                     self.content = self.chat_response.clone();
@@ -1290,7 +1383,6 @@ impl NotepadApp {
                                 }
                                 if ui.button("Clear").clicked() {
                                     self.chat_response.clear();
-                                    self.chat_error = None;
                                 }
                             });
                         }
@@ -1386,7 +1478,7 @@ mod tests {
 
     #[test]
     fn model_labels_are_friendly() {
-        assert!(model_label("gemini-2.5-flash").contains("Recommended"));
+        assert!(model_label("gemini-3.8-flash").contains("Recommended"));
         assert_eq!(model_label("custom-model"), "custom-model");
     }
 

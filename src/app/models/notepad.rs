@@ -72,7 +72,6 @@ pub struct NotepadApp {
     pub tabs: PanelTabs,
     pub chat_input: String,
     pub chat_response: String,
-    pub chat_error: Option<String>,
     pub chat_busy: bool,
     pub chat_rx: Option<Receiver<Result<String, String>>>,
     pub chat_model: String,
@@ -185,7 +184,6 @@ impl Default for NotepadApp {
             tabs: PanelTabs::default(),
             chat_input: String::new(),
             chat_response: String::new(),
-            chat_error: None,
             chat_busy: false,
             chat_rx: None,
             chat_model: {

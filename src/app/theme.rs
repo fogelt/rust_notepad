@@ -12,6 +12,8 @@ pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(74, 120, 173);
 pub const ACCENT_HOVERED: egui::Color32 = egui::Color32::from_rgb(88, 136, 190);
 /// Readable accent-tinted color for links on the dark background.
 pub const ACCENT_LINK: egui::Color32 = egui::Color32::from_rgb(132, 174, 224);
+/// Duration of the shared chevron flip animation, in seconds.
+pub const CHEVRON_ANIMATION_TIME: f32 = 0.16;
 /// Text drawn on top of [`ACCENT`] fills.
 pub const ACCENT_TEXT: egui::Color32 = egui::Color32::WHITE;
 
@@ -131,6 +133,28 @@ pub fn apply(ctx: &egui::Context) {
         .insert(egui::TextStyle::Small, egui::FontId::proportional(11.5));
 
     ctx.set_style(style);
+}
+
+/// Draw a small chevron pointing down at `flip = 0` and up at `flip = 1`.
+/// Shared by the Settings menu, collapsible headers, and combo boxes.
+pub fn draw_chevron(ui: &egui::Ui, center: egui::Pos2, flip: f32, color: egui::Color32) {
+    let angle = std::f32::consts::PI * flip;
+    let (sin, cos) = angle.sin_cos();
+    let local = [
+        egui::vec2(-4.0, -1.5),
+        egui::vec2(0.0, 2.5),
+        egui::vec2(4.0, -1.5),
+    ];
+    let rotate = |point: egui::Vec2| {
+        egui::pos2(
+            center.x + point.x * cos - point.y * sin,
+            center.y + point.x * sin + point.y * cos,
+        )
+    };
+    let points = [rotate(local[0]), rotate(local[1]), rotate(local[2])];
+    let stroke = egui::Stroke::new(1.6_f32, color);
+    ui.painter().line_segment([points[0], points[1]], stroke);
+    ui.painter().line_segment([points[1], points[2]], stroke);
 }
 
 /// Small centered X button for panel headers. Plain ASCII so it renders in

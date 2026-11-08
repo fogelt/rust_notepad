@@ -163,9 +163,9 @@ impl eframe::App for NotepadApp {
         if self.tabs.editor {
             self.show_markdown_toolbar(ctx);
         }
+        // The Assistant is a full-height side panel. The footer is declared
+        // after it so it only spans the editor/preview area.
         self.show_chat_panel(ctx);
-        // Declared after the side panels so the footer paints last
-        // (on top of everything) and spans the width between them.
         self.show_bottom_bar(ctx);
         self.show_editor(ctx);
         // Toasts live on the foreground layer, above every panel.

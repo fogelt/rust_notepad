@@ -1,7 +1,8 @@
 use crate::app::NotepadApp;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::theme::{
-    ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
+    ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, CHEVRON_ANIMATION_TIME, SURFACE,
+    SURFACE_ACTIVE, SURFACE_HOVERED, draw_chevron,
 };
 use eframe::egui;
 use egui_phosphor::regular as icons;
@@ -499,9 +500,11 @@ fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Res
             text_color,
         );
 
-        let flip =
-            ui.ctx()
-                .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
+        let flip = ui.ctx().animate_bool_with_time(
+            egui::Id::new("settings_menu_arrow"),
+            open,
+            CHEVRON_ANIMATION_TIME,
+        );
         draw_chevron(
             ui,
             egui::pos2(
@@ -521,25 +524,4 @@ fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Res
     // separator sits outside the hover background instead of through it.
     ui.expand_to_include_rect(slot);
     (slot, response)
-}
-
-/// Draw a small chevron pointing down at `flip = 0` and up at `flip = 1`.
-fn draw_chevron(ui: &egui::Ui, center: egui::Pos2, flip: f32, color: egui::Color32) {
-    let angle = std::f32::consts::PI * flip;
-    let (sin, cos) = angle.sin_cos();
-    let local = [
-        egui::vec2(-4.0, -1.5),
-        egui::vec2(0.0, 2.5),
-        egui::vec2(4.0, -1.5),
-    ];
-    let rotate = |point: egui::Vec2| {
-        egui::pos2(
-            center.x + point.x * cos - point.y * sin,
-            center.y + point.x * sin + point.y * cos,
-        )
-    };
-    let points = [rotate(local[0]), rotate(local[1]), rotate(local[2])];
-    let stroke = egui::Stroke::new(1.6_f32, color);
-    ui.painter().line_segment([points[0], points[1]], stroke);
-    ui.painter().line_segment([points[1], points[2]], stroke);
 }
