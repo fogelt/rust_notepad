@@ -1,7 +1,7 @@
 use crate::app::NotepadApp;
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT, ACCENT_LINK, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
+    ACCENT, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
     PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, panel_frame, panel_header,
 };
 use eframe::egui;
@@ -397,27 +397,44 @@ impl NotepadApp {
 
     fn show_empty_workspace(&mut self, ctx: &egui::Context, frame: egui::Frame) {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        egui::RichText::new(icons::TEXT_AA)
-                            .size(40.0)
-                            .color(ui.visuals().weak_text_color()),
-                    );
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new("Both panels are hidden")
-                            .strong()
-                            .size(16.0),
-                    );
-                    ui.add_space(4.0);
-                    if ui.button("Show editor").clicked() {
-                        self.tabs.editor = true;
-                    }
-                    if ui.button("Show preview").clicked() {
-                        self.tabs.preview = true;
-                    }
-                });
+            ui.vertical_centered(|ui| {
+                // Centre the group vertically as well as horizontally.
+                ui.add_space(((ui.available_height() - 180.0) * 0.5).max(8.0));
+                ui.label(egui::RichText::new(icons::TEXT_AA).size(42.0).color(ACCENT));
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Both panels are hidden")
+                        .strong()
+                        .size(16.0),
+                );
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new("Choose a panel to bring back.")
+                        .weak()
+                        .small(),
+                );
+                ui.add_space(16.0);
+
+                let show_editor = egui::Button::new(
+                    egui::RichText::new(format!("{}  Show editor", icons::PENCIL_SIMPLE))
+                        .strong()
+                        .color(ACCENT_TEXT),
+                )
+                .fill(ACCENT);
+                if ui.add_sized([170.0, 32.0], show_editor).clicked() {
+                    self.tabs.editor = true;
+                }
+
+                ui.add_space(6.0);
+                let show_preview = egui::Button::new(
+                    egui::RichText::new(format!("{}  Show preview", icons::EYE))
+                        .strong()
+                        .color(ACCENT_TEXT),
+                )
+                .fill(ACCENT);
+                if ui.add_sized([170.0, 32.0], show_preview).clicked() {
+                    self.tabs.preview = true;
+                }
             });
         });
     }

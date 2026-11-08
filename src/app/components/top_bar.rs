@@ -14,7 +14,14 @@ const FILE_FILTERS: [(&str, &[&str]); 3] = [
 
 /// Segmented view tab: selected tabs get the accent fill, the rest stay
 /// transparent inside the shared pill container and light up on hover.
-fn view_tab(ui: &mut egui::Ui, selected: &mut bool, label: &str, hover: &str) {
+/// Outer corners are rounded; edges shared with a neighbouring tab are square.
+fn view_tab(
+    ui: &mut egui::Ui,
+    selected: &mut bool,
+    label: &str,
+    hover: &str,
+    rounding: egui::Rounding,
+) {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(92.0, 26.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
@@ -26,7 +33,7 @@ fn view_tab(ui: &mut egui::Ui, selected: &mut bool, label: &str, hover: &str) {
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect.shrink(1.0), 6.0, fill);
+    ui.painter().rect_filled(rect, rounding, fill);
 
     let text_color = if *selected {
         ACCENT_TEXT
@@ -238,18 +245,31 @@ impl NotepadApp {
                                         &mut self.tabs.assistant,
                                         "Assistant",
                                         "Toggle the Gemini assistant panel",
+                                        egui::Rounding {
+                                            nw: 7.0,
+                                            sw: 7.0,
+                                            ne: 0.0,
+                                            se: 0.0,
+                                        },
                                     );
                                     view_tab(
                                         ui,
                                         &mut self.tabs.editor,
                                         "Editor",
                                         "Toggle the editor panel",
+                                        egui::Rounding::ZERO,
                                     );
                                     view_tab(
                                         ui,
                                         &mut self.tabs.preview,
                                         "Preview",
                                         "Toggle the Markdown preview panel (F11 for fullscreen)",
+                                        egui::Rounding {
+                                            nw: 0.0,
+                                            sw: 0.0,
+                                            ne: 7.0,
+                                            se: 7.0,
+                                        },
                                     );
                                 });
                             });
