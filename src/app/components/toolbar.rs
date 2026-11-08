@@ -362,7 +362,12 @@ impl NotepadApp {
             .frame(
                 egui::Frame::none()
                     .fill(crate::app::theme::BG_ELEVATED)
-                    .inner_margin(egui::Margin::symmetric(8.0, 5.0)),
+                    .inner_margin(egui::Margin {
+                        left: 8.0,
+                        right: 8.0,
+                        top: 5.0,
+                        bottom: 6.0,
+                    }),
             )
             .show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {

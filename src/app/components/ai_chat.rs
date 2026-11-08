@@ -568,8 +568,11 @@ impl NotepadApp {
                 // windows clip nothing instead of hiding content.
                 ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 ui.spacing_mut().button_padding = egui::vec2(10.0, 5.0);
+                let total_height = ui.available_height();
+                let top_max = (total_height - 190.0).max(120.0);
                 egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
+                    .max_height(top_max)
+                    .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.add_space(2.0);
 
@@ -728,67 +731,70 @@ impl NotepadApp {
                             ui.colored_label(err_color, err);
                         }
 
-                        ui.separator();
-                        ui.add_space(2.0);
-                        egui::Frame::none()
-                            .fill(BG_ELEVATED)
-                            .rounding(8.0)
-                            .stroke(egui::Stroke::new(1.0_f32, BORDER))
-                            .inner_margin(egui::Margin::same(10.0))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Suggestion").strong());
-                                    if !self.chat_response.is_empty() {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                ui.weak(
-                                                    egui::RichText::new(model_label(
-                                                        &self.chat_model,
-                                                    ))
-                                                    .small(),
-                                                );
-                                            },
-                                        );
-                                    }
-                                });
-                                ui.add_space(6.0);
-                                if self.chat_response.is_empty() {
-                                    ui.vertical_centered(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(icons::SPARKLE)
-                                                .size(22.0)
-                                                .color(ui.visuals().weak_text_color()),
-                                        );
-                                        ui.add_space(2.0);
-                                        ui.label(
-                                            egui::RichText::new(
-                                                "Gemini's suggestion will appear here.",
-                                            )
-                                            .weak()
-                                            .small(),
-                                        );
-                                    });
-                                    ui.add_space(4.0);
-                                } else {
-                                    egui::ScrollArea::vertical()
-                                        .max_height(220.0)
-                                        .auto_shrink([false; 2])
-                                        .show(ui, |ui| {
-                                            ui.add(
-                                                egui::TextEdit::multiline(&mut self.chat_response)
-                                                    .desired_rows(8)
-                                                    .desired_width(f32::INFINITY)
-                                                    .frame(false)
-                                                    .code_editor(),
-                                            );
-                                        });
-                                }
-                            });
+                    });
 
-                        // Wrapped so the buttons flow instead of forcing
-                        // the panel wider at small sizes.
-                        if !self.chat_response.is_empty() {
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Suggestion").strong());
+                    if !self.chat_response.is_empty() {
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.weak(
+                                    egui::RichText::new(model_label(&self.chat_model)).small(),
+                                );
+                            },
+                        );
+                    }
+                });
+                ui.add_space(4.0);
+
+                let card_height = ui.available_height().max(140.0);
+                egui::Frame::none()
+                    .fill(BG_ELEVATED)
+                    .rounding(8.0)
+                    .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                    .inner_margin(egui::Margin::same(10.0))
+                    .show(ui, |ui| {
+                        ui.set_min_height((card_height - 20.0).max(100.0));
+                        let actions_height = if self.chat_response.is_empty() { 0.0 } else { 36.0 };
+                        let body_height = (ui.available_height() - actions_height).max(60.0);
+                        if self.chat_response.is_empty() {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), body_height),
+                                egui::Layout::top_down(egui::Align::Center),
+                                |ui| {
+                                    ui.add_space(((body_height - 46.0) * 0.5).max(8.0));
+                                    ui.label(
+                                        egui::RichText::new(icons::SPARKLE)
+                                            .size(22.0)
+                                            .color(ui.visuals().weak_text_color()),
+                                    );
+                                    ui.add_space(2.0);
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Gemini's suggestion will appear here.",
+                                        )
+                                        .weak()
+                                        .small(),
+                                    );
+                                },
+                            );
+                        } else {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false; 2])
+                                .show(ui, |ui| {
+                                    ui.add_sized(
+                                        egui::vec2(ui.available_width(), body_height),
+                                        egui::TextEdit::multiline(&mut self.chat_response)
+                                            .desired_width(f32::INFINITY)
+                                            .frame(false)
+                                            .code_editor(),
+                                    );
+                                });
+                            ui.add_space(6.0);
                             ui.horizontal_wrapped(|ui| {
                                 if ui.button("Insert at cursor").clicked() {
                                     let snippet = self.chat_response.clone();
@@ -806,6 +812,7 @@ impl NotepadApp {
                             });
                         }
                     });
+
             });
 
         if !self.tabs.assistant {
