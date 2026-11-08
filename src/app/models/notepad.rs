@@ -1,3 +1,4 @@
+use eframe::egui;
 use egui_commonmark::CommonMarkCache;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -48,6 +49,8 @@ pub struct NotepadApp {
     pub last_native_ppp: Option<f32>,
     /// Title currently set on the OS window (avoids re-sending it every frame).
     pub window_title: Option<String>,
+    /// Cached app mark used in the empty editor/preview states.
+    pub logo_texture: Option<egui::TextureHandle>,
     /// Cached document statistics for the footer (refreshed on edits).
     pub word_count: usize,
     pub char_count: usize,
@@ -142,6 +145,7 @@ impl Default for NotepadApp {
             last_monitor_size: None,
             last_native_ppp: None,
             window_title: None,
+            logo_texture: None,
             word_count: 0,
             char_count: 0,
         }

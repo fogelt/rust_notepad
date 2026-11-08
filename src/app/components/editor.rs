@@ -294,12 +294,12 @@ impl NotepadApp {
             .show(ui, |ui| {
                 if self.content.trim().is_empty() {
                     ui.add_space((ui.available_height() * 0.24).clamp(0.0, 140.0));
+                    let logo = self.logo_texture(ui.ctx());
                     let mut chosen: Option<&'static templates::Template> = None;
                     ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new(icons::TEXT_AA)
-                                .size(38.0)
-                                .color(ui.visuals().weak_text_color()),
+                        ui.add(
+                            egui::Image::new(&logo)
+                                .fit_to_exact_size(egui::vec2(56.0, 56.0)),
                         );
                         ui.add_space(4.0);
                         ui.label(egui::RichText::new("Nothing to preview yet").strong().size(16.0));
@@ -403,12 +403,33 @@ impl NotepadApp {
             });
     }
 
+    /// Load the bundled app mark once and reuse the texture.
+    fn logo_texture(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
+        if let Some(texture) = &self.logo_texture {
+            return texture.clone();
+        }
+        let bytes = include_bytes!("../../../assets/icon.png");
+        let image = image::load_from_memory(bytes)
+            .expect("bundled app icon is a valid PNG")
+            .to_rgba8();
+        let size = [image.width() as usize, image.height() as usize];
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+        let texture = ctx.load_texture(
+            "rusty_notepad_logo",
+            color_image,
+            egui::TextureOptions::LINEAR,
+        );
+        self.logo_texture = Some(texture.clone());
+        texture
+    }
+
     fn show_empty_workspace(&mut self, ctx: &egui::Context, frame: egui::Frame) {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 // Centre the group vertically as well as horizontally.
                 ui.add_space(((ui.available_height() - 180.0) * 0.5).max(8.0));
-                ui.label(egui::RichText::new(icons::TEXT_AA).size(42.0).color(ACCENT));
+                let logo = self.logo_texture(ctx);
+                ui.add(egui::Image::new(&logo).fit_to_exact_size(egui::vec2(64.0, 64.0)));
                 ui.add_space(8.0);
                 ui.label(
                     egui::RichText::new("Both panels are hidden")

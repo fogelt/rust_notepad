@@ -167,3 +167,5 @@ depends on `libasound2` at runtime.
 - `src/app/audio.rs` handles microphone capture, `src/app/templates.rs` holds
   the starter documents, and `src/rmd_cli.rs` is shared by `rmd` and
   `rust_notepad --rmd`.
+- `scripts/generate-icon.py` regenerates `assets/icon.png` and `icon.ico` with
+  Python 3 + Pillow.
