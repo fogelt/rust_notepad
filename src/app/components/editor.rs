@@ -456,7 +456,7 @@ impl NotepadApp {
                             resolve_image_uris(&processed_content, base_dir.as_deref());
                         let max_w = (content_w as usize).max(100);
 
-                        let line_spacing = self.ui_settings.preview_line_spacing;
+                        let line_spacing = self.ui_settings.preview_line_factor();
                         CommonMarkViewer::new("md_viewer")
                             .max_image_width(Some(max_w))
                             .line_spacing(line_spacing)

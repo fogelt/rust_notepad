@@ -29,7 +29,7 @@ fn default_preview_font_size() -> f32 {
 }
 
 fn default_preview_line_spacing() -> f32 {
-    1.45
+    22.5
 }
 
 /// Appearance settings, all optional so older config files keep loading.
@@ -66,7 +66,25 @@ impl UiSettings {
     pub const EDITOR_SIZE_RANGE: std::ops::RangeInclusive<f32> = 12.0..=24.0;
     pub const EDITOR_LINE_RANGE: std::ops::RangeInclusive<f32> = 16.0..=30.0;
     pub const PREVIEW_SIZE_RANGE: std::ops::RangeInclusive<f32> = 13.0..=22.0;
-    pub const PREVIEW_LINE_RANGE: std::ops::RangeInclusive<f32> = 1.1..=2.0;
+    pub const PREVIEW_LINE_RANGE: std::ops::RangeInclusive<f32> = 16.0..=32.0;
+
+    /// Convert the preview line height in points to a multiple of the body
+    /// font size for the CommonMark renderer.
+    pub fn preview_line_factor(&self) -> f32 {
+        (self.preview_line_spacing / self.preview_font_size.max(1.0)).clamp(0.8, 3.0)
+    }
+
+    /// Upgrade older config files that stored preview line spacing as a
+    /// multiplier (for example `1.45`) instead of points.
+    pub fn normalize(&mut self) {
+        if self.preview_line_spacing < 4.0 {
+            self.preview_line_spacing *= self.preview_font_size.max(1.0);
+        }
+        self.preview_line_spacing = self.preview_line_spacing.clamp(
+            *Self::PREVIEW_LINE_RANGE.start(),
+            *Self::PREVIEW_LINE_RANGE.end(),
+        );
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -103,10 +121,12 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn load() -> AppConfig {
-    std::fs::read_to_string(config_path())
+    let mut cfg: AppConfig = std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    cfg.ui.normalize();
+    cfg
 }
 
 /// Write settings; returns the file path on success.
@@ -136,7 +156,7 @@ mod tests {
                 editor_line_height: 24.0,
                 preview_font: EditorFont::Monospace,
                 preview_font_size: 18.0,
-                preview_line_spacing: 1.6,
+                preview_line_spacing: 24.0,
             },
         };
         let json = serde_json::to_string(&cfg).unwrap();
@@ -149,6 +169,13 @@ mod tests {
             serde_json::from_str(r#"{"api_key":"AIza-test","model":"gemini-2.5-flash"}"#).unwrap();
         assert_eq!(cfg.ui, UiSettings::default());
         assert_eq!(cfg.api_key, "AIza-test");
+    }
+
+    #[test]
+    fn migrates_old_preview_line_multiplier() {
+        let mut ui: UiSettings = serde_json::from_str(r#"{"preview_line_spacing":1.5}"#).unwrap();
+        ui.normalize();
+        assert!((ui.preview_line_spacing - 23.25).abs() < 0.01);
     }
 
     #[test]

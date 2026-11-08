@@ -429,9 +429,9 @@ impl NotepadApp {
                 UiSettings::PREVIEW_LINE_RANGE,
             )
             .text("Line spacing")
-            .suffix("×")
-            .max_decimals(2)
-            .step_by(0.05),
+            .suffix(" pt")
+            .max_decimals(1)
+            .step_by(0.5),
         );
         if preview_line.drag_stopped() || (preview_line.changed() && !preview_line.dragged()) {
             self.save_ui_settings();
@@ -463,18 +463,28 @@ fn display_name(path: &Path) -> String {
 /// Settings menu button built from the standard button widget so its vertical
 /// metrics match the File menu. The flipping caret is drawn inside its rect.
 fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Response) {
-    let button = egui::Button::new("Settings").min_size(egui::vec2(90.0, 0.0));
+    // Reserve a little room after the label for the caret, so the standard
+    // button's left padding stays the same as the File menu.
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let mut label = egui::text::LayoutJob::default();
+    label.append(
+        "Settings   ",
+        0.0,
+        egui::TextFormat {
+            font_id: font,
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+
+    let button = egui::Button::new(label);
     let button = if open {
         button.fill(ui.visuals().widgets.open.weak_bg_fill)
     } else {
         button
     };
-    // Keep the standard vertical padding, but give the text balanced room on
-    // the left to match the space taken by the caret on the right.
-    let previous_padding = ui.spacing().button_padding;
-    ui.spacing_mut().button_padding.x = 8.0;
     let response = ui.add(button);
-    ui.spacing_mut().button_padding = previous_padding;
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, "Settings"));
 
     let flip = ui
         .ctx()
@@ -486,7 +496,7 @@ fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Res
     };
     draw_chevron(
         ui,
-        egui::pos2(response.rect.right() - 12.0, response.rect.center().y),
+        egui::pos2(response.rect.right() - 9.0, response.rect.center().y),
         flip,
         if open || response.hovered() {
             ACCENT
