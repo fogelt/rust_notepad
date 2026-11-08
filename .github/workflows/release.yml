@@ -42,10 +42,37 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Prepare macOS runner
+        if: runner.os == 'macOS'
+        run: |
+          # Spotlight can keep the mounted DMG busy while create-dmg unmounts it.
+          sudo mdutil -a -i off || true
+          hdiutil detach "/Volumes/Rusty Notepad" -force || true
+
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Build installers (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          for attempt in 1 2 3; do
+            echo "Packaging attempt $attempt..."
+            if cargo packager --release --formats "${{ matrix.formats }}" --out-dir dist; then
+              exit 0
+            fi
+            echo "Packaging failed; cleaning up the mounted image and retrying..."
+            hdiutil detach "/Volumes/Rusty Notepad" -force || true
+            rm -rf dist
+            sleep 5
+          done
+          echo "Packaging failed after 3 attempts." >&2
+          exit 1
+
       - name: Build installers
+        if: runner.os != 'macOS'
         env:
           # linuxdeploy is itself an AppImage; run it without FUSE on runners.
           APPIMAGE_EXTRACT_AND_RUN: 1
