@@ -39,7 +39,7 @@ pub struct NotepadApp {
     pub chat_api_key: String,
     /// Show the API key in plaintext (transient UI state, not persisted).
     pub chat_show_key: bool,
-    /// Microphone recording in progress (voice instruction).
+    /// Microphone recording in progress (document dictation).
     pub recording: Option<RecordingSession>,
     /// True while a transcription request is in flight.
     pub transcribing: bool,

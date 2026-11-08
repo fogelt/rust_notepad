@@ -114,8 +114,9 @@ impl eframe::App for NotepadApp {
         self.enforce_min_window_size(ctx);
         self.update_window_title(ctx);
         self.handle_global_shortcuts(ctx);
-        // Audio files can be dropped anywhere; open the assistant and transcribe.
+        // Audio files can be dropped anywhere; transcribe them into the document.
         self.handle_dropped_audio(ctx);
+        self.poll_dictation(ctx);
         self.show_top_bar(ctx);
         // The markdown toolbar only acts on the editor, so don't waste vertical
         // space on it while the editor is hidden (e.g. full-width preview).

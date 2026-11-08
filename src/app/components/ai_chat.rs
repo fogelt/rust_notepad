@@ -1,5 +1,4 @@
 use crate::app::NotepadApp;
-use crate::app::audio;
 use crate::app::theme::{
     ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
     MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, panel_frame, panel_header,
@@ -12,7 +11,7 @@ use std::path::Path;
 use std::sync::mpsc;
 
 /// A small, curated set of models that work well for Markdown editing and
-/// voice instructions. Showing the whole live model catalog is overwhelming
+/// document dictation. Showing the whole live model catalog is overwhelming
 /// and includes many unrelated models.
 pub struct ModelChoice {
     pub id: &'static str,
@@ -87,20 +86,6 @@ fn read_audio_file(path: &Path) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(bytes)
-}
-
-fn hovered_audio_name(ctx: &egui::Context) -> Option<String> {
-    ctx.input(|i| {
-        i.raw.hovered_files.iter().find_map(|file| {
-            let path = file.path.as_ref()?;
-            audio_mime(path)?;
-            Some(
-                path.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| String::from("audio file")),
-            )
-        })
-    })
 }
 
 /// Build the prompt sent to Gemini: user instruction + current document.
@@ -223,6 +208,51 @@ fn post_generate(
         .map_err(|e| format!("Bad response from Gemini: {e}"))
 }
 
+/// Replace the character range between `first` and `second` with dictated
+/// `text`, adding spaces where it would otherwise run into neighbouring words.
+/// Returns the new content and the cursor position (in chars) after the insert.
+fn splice_dictation(content: &str, first: usize, second: usize, text: &str) -> (String, usize) {
+    let (start_c, end_c) = if first <= second {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let start_b = content
+        .char_indices()
+        .nth(start_c)
+        .map(|(b, _)| b)
+        .unwrap_or(content.len());
+    let end_b = content
+        .char_indices()
+        .nth(end_c)
+        .map(|(b, _)| b)
+        .unwrap_or(content.len());
+
+    let before = &content[..start_b];
+    let after = &content[end_b..];
+    let before_space = before
+        .chars()
+        .next_back()
+        .is_some_and(|c| c.is_whitespace());
+    let after_space = after.chars().next().is_some_and(|c| c.is_whitespace());
+
+    let mut snippet = String::new();
+    if !before.is_empty() && !before_space {
+        snippet.push(' ');
+    }
+    snippet.push_str(text);
+    if !after.is_empty() && !after_space {
+        snippet.push(' ');
+    }
+
+    let cursor = before.chars().count() + snippet.chars().count();
+    let mut updated = String::with_capacity(content.len() + snippet.len());
+    updated.push_str(before);
+    updated.push_str(&snippet);
+    updated.push_str(after);
+    (updated, cursor)
+}
+
 fn insert_at_cursor(app: &mut NotepadApp, ctx: &egui::Context, snippet: &str) {
     let id = egui::Id::new("editor_text");
     if let Some(state) = TextEditState::load(ctx, id)
@@ -279,6 +309,16 @@ impl NotepadApp {
         }
     }
 
+    /// Poll recording and transcription for document dictation. Called once
+    /// per frame so it also runs while the Assistant panel is closed.
+    pub fn poll_dictation(&mut self, ctx: &egui::Context) {
+        self.poll_recording();
+        self.poll_transcription(ctx);
+        if self.recording.is_some() || self.transcribing {
+            ctx.request_repaint();
+        }
+    }
+
     /// Poll the microphone thread; when the WAV is ready, transcribe it.
     fn poll_recording(&mut self) {
         let finished = self.recording.as_ref().and_then(|session| session.poll());
@@ -289,13 +329,12 @@ impl NotepadApp {
         match result {
             Ok(wav) => self.start_transcription(wav, "audio/wav"),
             Err(err) => {
-                self.chat_error = Some(err);
-                self.status_message = String::from("Recording failed.");
+                self.status_message = format!("Dictation failed: {err}");
             }
         }
     }
 
-    fn poll_transcription(&mut self) {
+    fn poll_transcription(&mut self, ctx: &egui::Context) {
         let received = match self.transcribe_rx.as_ref().map(|rx| rx.try_recv()) {
             Some(Ok(result)) => Some(result),
             Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
@@ -313,51 +352,82 @@ impl NotepadApp {
             Ok(text) => {
                 let text = text.trim();
                 if !text.is_empty() {
-                    if !self.chat_input.is_empty()
-                        && !self.chat_input.ends_with(' ')
-                        && !self.chat_input.ends_with('\n')
-                    {
-                        self.chat_input.push(' ');
+                    self.insert_dictation(ctx, text);
+                    if self.file_path.is_none() {
+                        self.status_message =
+                            String::from("Dictation inserted — save the file to keep it.");
+                    } else {
+                        self.status_message = String::from("Dictation inserted.");
                     }
-                    self.chat_input.push_str(text);
+                } else {
+                    self.status_message = String::from("No speech was detected.");
                 }
-                self.chat_error = None;
-                self.status_message = String::from("Transcription ready — review it, then Send.");
             }
             Err(err) => {
-                self.chat_error = Some(err);
-                self.status_message = String::from("Transcription failed.");
+                self.status_message = format!("Dictation failed: {err}");
             }
         }
+    }
+
+    /// Insert transcribed speech at the editor cursor, replacing any selection
+    /// and keeping sensible spacing next to existing text.
+    fn insert_dictation(&mut self, ctx: &egui::Context, text: &str) {
+        let id = egui::Id::new("editor_text");
+        let mut handled = false;
+
+        if let Some(state) = TextEditState::load(ctx, id)
+            && let Some(range) = state.cursor.char_range()
+        {
+            let (updated, new_c) = splice_dictation(
+                &self.content,
+                range.primary.index,
+                range.secondary.index,
+                text,
+            );
+            self.content = updated;
+            if let Some(mut state) = TextEditState::load(ctx, id) {
+                state
+                    .cursor
+                    .set_char_range(Some(CCursorRange::one(egui::text::CCursor::new(new_c))));
+                state.store(ctx, id);
+            }
+            handled = true;
+        }
+
+        if !handled {
+            if !self.content.is_empty() && !self.content.ends_with(char::is_whitespace) {
+                self.content.push(' ');
+            }
+            self.content.push_str(text);
+        }
+        ctx.memory_mut(|m| m.request_focus(id));
+        self.note_content_changed();
     }
 
     fn start_transcription(&mut self, audio: Vec<u8>, mime: &'static str) {
         let api_key = self.api_key();
         if api_key.is_empty() {
-            self.chat_error =
-                Some("No API key: add one in Assistant settings before transcribing.".to_string());
-            self.status_message = String::from("Transcription failed.");
+            self.status_message =
+                String::from("Dictation needs a Gemini API key — add one in Assistant settings.");
             return;
         }
         let model = self.chat_model.trim().to_string();
         if model.is_empty() {
-            self.chat_error =
-                Some("No model selected. Pick one in Assistant settings.".to_string());
-            self.status_message = String::from("Transcription failed.");
+            self.status_message =
+                String::from("Dictation needs a model — pick one in Assistant settings.");
             return;
         }
         let (tx, rx) = mpsc::channel();
         self.transcribe_rx = Some(rx);
         self.transcribing = true;
-        self.chat_error = None;
-        self.status_message = String::from("Transcribing audio with Gemini...");
+        self.status_message = String::from("Transcribing dictation with Gemini...");
         std::thread::spawn(move || {
             let _ = tx.send(gemini_transcribe(&audio, mime, &api_key, &model));
         });
     }
 
-    /// Handle audio files dropped anywhere on the window: open the assistant
-    /// and transcribe the first supported file.
+    /// Handle audio files dropped anywhere on the window: transcribe the first
+    /// supported file and insert the result into the document.
     pub fn handle_dropped_audio(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| {
             i.raw.dropped_files.iter().find_map(|file| {
@@ -373,12 +443,11 @@ impl NotepadApp {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
-        self.tabs.assistant = true;
 
         if self.api_key().is_empty() {
-            self.chat_error =
-                Some("No API key: add one in Assistant settings before transcribing.".to_string());
-            self.status_message = String::from("Transcription failed.");
+            self.status_message = String::from(
+                "Dropped audio needs a Gemini API key — add one in Assistant settings.",
+            );
             return;
         }
 
@@ -388,14 +457,13 @@ impl NotepadApp {
                 self.start_transcription(bytes, mime);
             }
             Err(err) => {
-                self.chat_error = Some(format!("{name}: {err}"));
-                self.status_message = String::from("Could not use the audio file.");
+                self.status_message = format!("Could not use {name}: {err}");
             }
         }
     }
 
     /// API key from the settings field, falling back to the environment.
-    fn api_key(&self) -> String {
+    pub(crate) fn api_key(&self) -> String {
         if !self.chat_api_key.trim().is_empty() {
             return self.chat_api_key.trim().to_string();
         }
@@ -523,27 +591,21 @@ impl NotepadApp {
                     );
                 }
             });
-        ui.weak("Only models that work well for Markdown edits are listed.");
+        ui.weak("Only models that work well for Markdown edits and dictation are listed.");
 
         ui.add_space(4.0);
     }
 
     pub fn show_chat_panel(&mut self, ctx: &egui::Context) {
         if !self.tabs.assistant {
-            if let Some(session) = self.recording.take() {
-                session.request_stop();
-            }
             return;
         }
 
         self.poll_chat();
-        self.poll_recording();
-        self.poll_transcription();
-        if self.chat_busy || self.transcribing || self.recording.is_some() {
+        if self.chat_busy {
             ctx.request_repaint();
         }
 
-        let hovering_audio = hovered_audio_name(ctx);
         let has_key = !self.api_key().is_empty();
         let settings_open = !has_key;
         let send_shortcut = ctx.format_shortcut(&egui::KeyboardShortcut::new(
@@ -597,26 +659,8 @@ impl NotepadApp {
                             }
                         });
 
-                        if let Some(name) = &hovering_audio {
-                            egui::Frame::none()
-                                .fill(ui.visuals().selection.bg_fill)
-                                .rounding(6.0)
-                                .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} Release to transcribe {name}",
-                                            icons::WAVEFORM
-                                        ))
-                                        .color(egui::Color32::WHITE),
-                                    );
-                                });
-                        }
-
                         let input = egui::TextEdit::multiline(&mut self.chat_input)
-                            .hint_text(
-                                "e.g. Turn these bullets into a table, or drop an audio file…",
-                            )
+                            .hint_text("e.g. Turn these bullets into a table…")
                             .desired_rows(3)
                             .desired_width(f32::INFINITY)
                             .show(ui);
@@ -629,12 +673,8 @@ impl NotepadApp {
                             self.send_chat();
                         }
 
-                        let recording = self.recording.is_some();
-                        let can_send = !self.chat_busy
-                            && !self.transcribing
-                            && !recording
-                            && !self.chat_input.trim().is_empty();
-                        let mut stop_clicked = false;
+                        let can_send =
+                            !self.chat_busy && !self.chat_input.trim().is_empty();
 
                         ui.horizontal_wrapped(|ui| {
                             let send = egui::Button::new(
@@ -654,76 +694,18 @@ impl NotepadApp {
                                 self.send_chat();
                             }
 
-                            if let Some(session) = &self.recording {
-                                let secs = session.elapsed().as_secs();
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(232, 112, 112),
-                                    format!(
-                                        "{} {:02}:{:02}",
-                                        icons::RECORD,
-                                        secs / 60,
-                                        secs % 60
-                                    ),
-                                );
-                                stop_clicked = ui
-                                    .add(egui::Button::new(
-                                        egui::RichText::new(format!(
-                                            "{} Stop",
-                                            icons::STOP_CIRCLE
-                                        ))
-                                        .strong(),
-                                    ))
-                                    .on_hover_text("Stop and transcribe the recording")
-                                    .clicked();
-                            } else {
-                                let record = egui::Button::new(
-                                    egui::RichText::new(format!("{} Record", icons::MICROPHONE))
-                                        .strong(),
-                                );
-                                if ui
-                                    .add_enabled(
-                                        !self.chat_busy && !self.transcribing && has_key,
-                                        record,
-                                    )
-                                    .on_hover_text(if has_key {
-                                        "Record a voice instruction (60s max); it is transcribed into the box"
-                                    } else {
-                                        "Add a Gemini API key in Settings first"
-                                    })
-                                    .clicked()
-                                {
-                                    self.chat_error = None;
-                                    self.recording = Some(audio::start());
-                                    self.status_message =
-                                        String::from("Recording… click Stop when finished.");
-                                }
-                            }
-
-                            if self.transcribing {
-                                ui.spinner();
-                                ui.label("Transcribing…");
-                            } else if self.chat_busy {
+                            if self.chat_busy {
                                 ui.spinner();
                                 ui.label("Thinking…");
                             }
                         });
 
-                        if stop_clicked
-                            && let Some(session) = &self.recording
-                        {
-                            session.request_stop();
-                            self.status_message = String::from("Finishing recording…");
-                        }
-
-                        if self.recording.is_some() {
-                            ui.weak("Speak your edit instruction, then press Stop.");
-                        } else if !has_key {
-                            ui.weak("Add a Gemini API key in Settings to record or drop audio.");
+                        if !has_key {
+                            ui.weak("Add a Gemini API key in Settings to use the assistant.");
                         } else {
-                            ui.weak(format!(
-                                "Drop an audio file (wav, mp3, m4a, ogg, flac) anywhere, or record above. Max {}s.",
-                                audio::MAX_SECONDS
-                            ));
+                            ui.weak(
+                                "Use the microphone in the editor toolbar to dictate into the document.",
+                            );
                         }
 
                         if let Some(err) = self.chat_error.clone() {
@@ -814,22 +796,35 @@ impl NotepadApp {
                     });
 
             });
-
-        if !self.tabs.assistant {
-            if let Some(session) = self.recording.take() {
-                session.request_stop();
-            }
-            // Dropped receiver (if any) just stops being polled; the
-            // background thread's send will fail silently.
-            self.chat_rx = None;
-            self.chat_busy = false;
-        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dictation_adds_spacing_between_words() {
+        let (text, cursor) = splice_dictation("hello world", 5, 5, "there");
+        assert_eq!(text, "hello there world");
+        assert_eq!(cursor, "hello there".chars().count());
+    }
+
+    #[test]
+    fn dictation_replaces_the_selection() {
+        let (text, cursor) = splice_dictation("keep this and that", 5, 9, "only");
+        assert_eq!(text, "keep only and that");
+        assert_eq!(cursor, "keep only".chars().count());
+    }
+
+    #[test]
+    fn dictation_handles_reversed_and_empty_selection() {
+        let (text, _) = splice_dictation("ab", 2, 0, "X");
+        assert_eq!(text, "X");
+        let (text, cursor) = splice_dictation("", 0, 0, "first");
+        assert_eq!(text, "first");
+        assert_eq!(cursor, 5);
+    }
 
     #[test]
     fn prompt_contains_instruction_and_document() {

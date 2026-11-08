@@ -18,8 +18,8 @@ rewrite or extend it.
 - **Autosave** once the document has a file name.
 - **`rmd` command** to open or create notes from any terminal.
 - **Optional Gemini assistant** that can rewrite or extend the document.
-- **Voice instructions** — record up to 60 seconds, or drop an audio file, and
-  Gemini transcribes it into the instruction box.
+- **Dictation** — record up to 60 seconds, or drop an audio file, and Gemini
+  transcribes it straight into the document at the cursor.
 - **Native installers** for Windows, macOS (Apple Silicon and Intel), Debian/
   Ubuntu, and any Linux via AppImage.
 
@@ -44,7 +44,7 @@ unsigned; choose **More info → Run anyway**.
 
 Open the `.dmg` and drag the app to Applications. The build is unsigned, so the
 first launch needs **right-click → Open**. macOS asks for microphone access the
-first time you record a voice instruction.
+first time you dictate with the microphone.
 
 ### Linux
 
@@ -101,17 +101,21 @@ sh install-rmd.sh ./rust_notepad_*.AppImage
 It creates a `rmd` launcher in `~/.local/bin` (or `/usr/local/bin` when
 writable). Use `rmd --help` for options.
 
-## Assistant and voice (optional)
+## Assistant and dictation (optional)
 
-The assistant needs a Gemini API key from
+The assistant and dictation need a Gemini API key from
 [Google AI Studio](https://aistudio.google.com/api-keys).
 
 1. Open the **Assistant** tab and expand **Settings**.
 2. Paste the API key and choose from a few curated Gemini models, then save.
-3. Type an instruction, or use **Record** / drop an audio file. The transcription
-   appears in the instruction box; review it and press **Send**.
+3. Type an instruction and press **Send** to rewrite or extend the document.
 
-`Ctrl/Cmd+Enter` sends from the instruction box. Voice recordings are capped at
+**Dictation** is separate from the assistant: press the microphone in the editor
+toolbar, speak, and press **Stop**. The transcription is inserted at the editor
+cursor (replacing any selection). You can also drop an audio file anywhere on the
+window — its transcription is inserted into the document the same way.
+
+`Ctrl/Cmd+Enter` sends from the instruction box. Recordings are capped at
 60 seconds and dropped audio files at 14 MB; supported formats include `wav`,
 `mp3`, `m4a`, `ogg`, and `flac`. Transcription uses the selected Gemini model,
 so pick one with audio input support.

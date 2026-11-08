@@ -1,8 +1,9 @@
-//! Microphone capture for voice instructions.
+//! Microphone capture for document dictation.
 //!
 //! Records from the default input device on a background thread, then sends a
 //! mono 16-bit WAV to the UI thread. Gemini accepts that WAV directly as inline
-//! audio, so no external transcriber or encoder is needed.
+//! audio, so no external transcriber or encoder is needed. The transcription is
+//! inserted into the open document at the editor cursor.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample};

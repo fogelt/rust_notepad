@@ -1,4 +1,5 @@
 use crate::app::NotepadApp;
+use crate::app::audio;
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -430,6 +431,48 @@ impl NotepadApp {
                     }
                     if toolbar_icon(ui, icons::TABLE, "Insert table").clicked() {
                         action = Some(15);
+                    }
+                    ui.separator();
+                    // Document dictation. The mic writes the transcription
+                    // straight into the editor at the cursor.
+                    if self.transcribing {
+                        ui.spinner();
+                        ui.label(egui::RichText::new("Transcribing…").small());
+                    } else if let Some(session) = &self.recording {
+                        let secs = session.elapsed().as_secs();
+                        ui.colored_label(
+                            egui::Color32::from_rgb(232, 112, 112),
+                            format!("{} {:02}:{:02}", icons::RECORD, secs / 60, secs % 60),
+                        );
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new(format!("{} Stop", icons::STOP_CIRCLE))
+                                    .strong(),
+                            ))
+                            .on_hover_text("Stop and transcribe dictation")
+                            .clicked()
+                        {
+                            session.request_stop();
+                            self.status_message = String::from("Finishing dictation…");
+                        }
+                    } else {
+                        let has_key = !self.api_key().is_empty();
+                        let mic =
+                            egui::Button::new(egui::RichText::new(icons::MICROPHONE).size(18.0))
+                                .min_size(egui::vec2(32.0, 28.0));
+                        if ui
+                            .add_enabled(has_key, mic)
+                            .on_hover_text(if has_key {
+                                "Dictate into the document (60s max)"
+                            } else {
+                                "Add a Gemini API key in Assistant settings to dictate"
+                            })
+                            .clicked()
+                        {
+                            self.recording = Some(audio::start());
+                            self.status_message =
+                                String::from("Listening… click Stop when finished.");
+                        }
                     }
                 });
             });

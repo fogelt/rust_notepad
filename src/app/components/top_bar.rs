@@ -177,7 +177,7 @@ impl NotepadApp {
                         // Fixed box like the tabs so the labels share one
                         // baseline.
                         ui.allocate_ui_with_layout(
-                            egui::vec2(52.0, 26.0),
+                            egui::vec2(56.0, 30.0),
                             egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                             |ui| {
                                 ui.menu_button("File", |ui| {
