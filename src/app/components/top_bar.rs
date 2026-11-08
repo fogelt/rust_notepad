@@ -460,63 +460,44 @@ fn display_name(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Settings menu button with the caret drawn inside its hover background.
+/// Settings menu button built from the standard button widget so its vertical
+/// metrics match the File menu. The flipping caret is drawn inside its rect.
 fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Response) {
-    let font = egui::TextStyle::Button.resolve(ui.style());
-    let galley =
-        ui.painter()
-            .layout_no_wrap(String::from("Settings"), font, egui::Color32::PLACEHOLDER);
-    let padding = egui::vec2(8.0, 0.0);
-    let arrow_space = 18.0;
-    let height = ui
-        .spacing()
-        .interact_size
-        .y
-        .max(galley.size().y + padding.y * 2.0);
-    let size = egui::vec2(galley.size().x + padding.x * 2.0 + arrow_space, height);
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    let hovered = response.hovered();
-    let visuals = if open {
-        ui.style().visuals.widgets.open
-    } else if hovered {
-        ui.style().visuals.widgets.hovered
+    let button = egui::Button::new("Settings").min_size(egui::vec2(90.0, 0.0));
+    let button = if open {
+        button.fill(ui.visuals().widgets.open.weak_bg_fill)
     } else {
-        ui.style().visuals.widgets.inactive
+        button
     };
+    // Keep the standard vertical padding, but give the text balanced room on
+    // the left to match the space taken by the caret on the right.
+    let previous_padding = ui.spacing().button_padding;
+    ui.spacing_mut().button_padding.x = 8.0;
+    let response = ui.add(button);
+    ui.spacing_mut().button_padding = previous_padding;
 
-    if ui.is_rect_visible(rect) {
-        ui.painter().rect(
-            rect,
-            visuals.rounding,
-            visuals.weak_bg_fill,
-            visuals.bg_stroke,
-        );
-        let text_color = visuals.fg_stroke.color;
-        ui.painter().galley(
-            egui::pos2(
-                rect.left() + padding.x,
-                rect.center().y - galley.size().y * 0.5,
-            ),
-            galley,
-            text_color,
-        );
-
-        let flip =
-            ui.ctx()
-                .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
-        draw_chevron(
-            ui,
-            egui::pos2(rect.right() - padding.x - 5.0, rect.center().y),
-            flip,
-            if open || hovered { ACCENT } else { text_color },
-        );
-        if flip > 0.0 && flip < 1.0 {
-            ui.ctx().request_repaint();
-        }
+    let flip = ui
+        .ctx()
+        .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
+    let text_color = if response.hovered() {
+        ui.visuals().widgets.hovered.fg_stroke.color
+    } else {
+        ui.visuals().widgets.inactive.fg_stroke.color
+    };
+    draw_chevron(
+        ui,
+        egui::pos2(response.rect.right() - 12.0, response.rect.center().y),
+        flip,
+        if open || response.hovered() {
+            ACCENT
+        } else {
+            text_color
+        },
+    );
+    if flip > 0.0 && flip < 1.0 {
+        ui.ctx().request_repaint();
     }
-
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, "Settings"));
-    (rect, response)
+    (response.rect, response)
 }
 
 /// Draw a small chevron pointing down at `flip = 0` and up at `flip = 1`.
