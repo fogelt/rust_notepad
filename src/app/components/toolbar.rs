@@ -73,16 +73,28 @@ fn toolbar_icon(ui: &mut egui::Ui, icon: &str, hover: &str) -> egui::Response {
     .on_hover_text(hover)
 }
 
+/// Blend two opaque colors.
+fn mix_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    egui::Color32::from_rgb(
+        channel(a.r(), b.r()),
+        channel(a.g(), b.g()),
+        channel(a.b(), b.b()),
+    )
+}
+
 /// Accent-filled dictation button. `icon` is the glyph to show, or `None` for
-/// an animated spinner. The size stays fixed so the toolbar never jumps when
-/// the state changes.
+/// an animated spinner. `pulse` gently animates the control while recording or
+/// transcribing. The size stays fixed so the toolbar never jumps.
 fn dictation_button(
     ui: &mut egui::Ui,
     icon: Option<&str>,
-    enabled: bool,
+    interactive: bool,
+    pulse: bool,
     hover: &str,
 ) -> egui::Response {
-    let sense = if enabled {
+    let sense = if interactive {
         egui::Sense::click()
     } else {
         egui::Sense::hover()
@@ -91,18 +103,45 @@ fn dictation_button(
     let response = response.on_hover_text(hover);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, hover));
 
-    let fill = if !enabled {
+    // Smooth 0..1 pulse while a recording or transcription is in progress.
+    let wave = if pulse {
+        let time = ui.input(|i| i.time) as f32;
+        0.5 - 0.5 * (time * 3.2).cos()
+    } else {
+        0.0
+    };
+
+    let fill = if !interactive && !pulse {
         ACCENT.gamma_multiply(0.4)
-    } else if response.hovered() {
+    } else if response.hovered() && interactive {
         ACCENT_HOVERED
+    } else if pulse {
+        mix_color(ACCENT, ACCENT_HOVERED, 0.1 + 0.35 * wave)
     } else {
         ACCENT
     };
+
+    if pulse {
+        let ring = rect.expand(1.0 + 2.5 * wave);
+        let ring_color = egui::Color32::from_rgba_unmultiplied(
+            ACCENT_HOVERED.r(),
+            ACCENT_HOVERED.g(),
+            ACCENT_HOVERED.b(),
+            (110.0 * (1.0 - wave)) as u8,
+        );
+        ui.painter().rect_stroke(
+            ring,
+            6.0 + 2.5 * wave,
+            egui::Stroke::new(1.0_f32, ring_color),
+        );
+        ui.ctx().request_repaint();
+    }
+
     ui.painter().rect_filled(rect, 5.0, fill);
 
     match icon {
         Some(icon) => {
-            let color = if enabled {
+            let color = if interactive || pulse {
                 ACCENT_TEXT
             } else {
                 ACCENT_TEXT.gamma_multiply(0.55)
@@ -121,7 +160,7 @@ fn dictation_button(
         }
     }
 
-    if enabled {
+    if interactive {
         response.on_hover_cursor(egui::CursorIcon::PointingHand)
     } else {
         response
@@ -498,7 +537,7 @@ impl NotepadApp {
                             egui::vec2(138.0, 28.0),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
-                                dictation_button(ui, None, false, "Transcribing dictation…");
+                                dictation_button(ui, None, false, true, "Transcribing dictation…");
                                 ui.add_space(10.0);
                                 ui.allocate_ui_with_layout(
                                     egui::vec2(96.0, 28.0),
@@ -529,6 +568,7 @@ impl NotepadApp {
                                         ui,
                                         Some(icons::RECORD),
                                         true,
+                                        true,
                                         "Stop and transcribe dictation",
                                     )
                                     .clicked();
@@ -544,7 +584,7 @@ impl NotepadApp {
                                                 .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                                                 .show(ui, |ui| {
                                                     ui.colored_label(
-                                                        egui::Color32::from_rgb(232, 112, 112),
+                                                        ACCENT,
                                                         egui::RichText::new(format!(
                                                             "{:02}:{:02}",
                                                             secs / 60,
@@ -570,10 +610,13 @@ impl NotepadApp {
                                 egui::vec2(32.0, 28.0),
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
+                                    // Always clickable so a missing key gets an
+                                    // immediate, actionable message.
                                     dictation_button(
                                         ui,
                                         Some(icons::MICROPHONE),
-                                        has_key,
+                                        true,
+                                        false,
                                         if has_key {
                                             "Dictate into the document (60s max)"
                                         } else {
@@ -585,10 +628,24 @@ impl NotepadApp {
                             )
                             .inner;
                         if start {
-                            self.cancel_dictation(ctx);
-                            self.recording = Some(audio::start());
-                            self.status_message =
-                                String::from("Listening… click to stop when finished.");
+                            if !has_key {
+                                let message = String::from(
+                                    "Add a Gemini API key in Assistant settings to dictate.",
+                                );
+                                self.status_message = message.clone();
+                                self.push_toast(message, true);
+                            } else if self.chat_model.trim().is_empty() {
+                                let message = String::from(
+                                    "Pick a Gemini model in Assistant settings to dictate.",
+                                );
+                                self.status_message = message.clone();
+                                self.push_toast(message, true);
+                            } else {
+                                self.cancel_dictation(ctx);
+                                self.recording = Some(audio::start());
+                                self.status_message =
+                                    String::from("Listening… click to stop when finished.");
+                            }
                         }
                     }
                 });
