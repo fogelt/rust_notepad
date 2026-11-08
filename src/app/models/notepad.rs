@@ -168,7 +168,10 @@ mod tests {
 
     #[test]
     fn missing_file_becomes_new_buffer_at_that_path() {
-        let dir = std::env::temp_dir().join("rust_notepad_rmd_test");
+        let dir = std::env::temp_dir().join(format!(
+            "rust_notepad_missing_file_test_{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         let app = NotepadApp::with_file(Some(dir.join("notes.md")));
         assert_eq!(app.content, "");
@@ -178,7 +181,10 @@ mod tests {
 
     #[test]
     fn existing_file_is_loaded() {
-        let dir = std::env::temp_dir().join("rust_notepad_rmd_test");
+        let dir = std::env::temp_dir().join(format!(
+            "rust_notepad_existing_file_test_{}",
+            std::process::id()
+        ));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("existing.md");
         std::fs::write(&path, "# hi").unwrap();
