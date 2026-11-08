@@ -1,8 +1,8 @@
+use crate::app::NotepadApp;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::theme::{
     ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
 };
-use crate::app::NotepadApp;
 use eframe::egui;
 use egui_phosphor::regular as icons;
 use rfd::FileDialog;
@@ -30,11 +30,7 @@ fn view_tab(
     let hovered = response.hovered();
 
     let fill = if *selected {
-        if hovered {
-            ACCENT_HOVERED
-        } else {
-            ACCENT
-        }
+        if hovered { ACCENT_HOVERED } else { ACCENT }
     } else if hovered {
         SURFACE_ACTIVE
     } else {

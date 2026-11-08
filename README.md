@@ -154,7 +154,7 @@ cargo install cargo-packager --locked
 cargo packager --release   # installer for the host OS
 ```
 
-Pushing a `v*` tag (for example `v0.2.0`) runs
+Pushing a `v*` tag (for example `v0.3.0`) runs
 `.github/workflows/release.yml`, which builds Windows, macOS, and Linux
 installers on native runners and attaches them to a GitHub release.
 
