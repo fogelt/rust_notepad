@@ -299,7 +299,7 @@ impl NotepadApp {
                     ui.vertical_centered(|ui| {
                         ui.add(
                             egui::Image::new(&logo)
-                                .fit_to_exact_size(egui::vec2(56.0, 56.0)),
+                                .fit_to_exact_size(egui::vec2(72.0, 72.0)),
                         );
                         ui.add_space(4.0);
                         ui.label(egui::RichText::new("Nothing to preview yet").strong().size(16.0));
@@ -429,7 +429,7 @@ impl NotepadApp {
                 // Centre the group vertically as well as horizontally.
                 ui.add_space(((ui.available_height() - 180.0) * 0.5).max(8.0));
                 let logo = self.logo_texture(ctx);
-                ui.add(egui::Image::new(&logo).fit_to_exact_size(egui::vec2(64.0, 64.0)));
+                ui.add(egui::Image::new(&logo).fit_to_exact_size(egui::vec2(80.0, 80.0)));
                 ui.add_space(8.0);
                 ui.label(
                     egui::RichText::new("Both panels are hidden")

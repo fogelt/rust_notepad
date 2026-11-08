@@ -5,15 +5,14 @@ Run from the repo root:  py scripts/generate-icon.py
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 SIZE = 2048  # supersampled; downscaled for the final assets
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 ACCENT = "#4A78AD"
-TILE = "#1C222B"
-TILE_BORDER = "#2C3A4A"
 PAGE = "#F6F1E7"
+PAGE_BORDER = "#2C3A4A"
 INK = "#2A2C31"
 
 
@@ -28,49 +27,41 @@ def rounded_box(
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
-def hash_mark(
-    draw: ImageDraw.ImageDraw,
-    center: tuple[int, int],
-    width: int,
-    height: int,
-    thickness: int,
-    color: str,
-) -> None:
-    cx, cy = center
-    for x in (cx - width // 3, cx + width // 3):
-        rounded_box(
-            draw,
-            (x - thickness // 2, cy - height // 2, x + thickness // 2, cy + height // 2),
-            thickness // 2,
-            color,
-        )
-    for y in (cy - height // 3, cy + height // 3):
-        rounded_box(
-            draw,
-            (cx - width // 2, y - thickness // 2, cx + width // 2, y + thickness // 2),
-            thickness // 2,
-            color,
-        )
+def bold_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for path in (
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
 
 
 image = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
 draw = ImageDraw.Draw(image)
 
-# App tile.
-rounded_box(draw, (32, 32, SIZE - 32, SIZE - 32), 448, TILE, TILE_BORDER, 12)
-
-# Cream page with a blue bookmark ribbon.
-rounded_box(draw, (500, 360, 1548, 1688), 96, PAGE)
+# Cream page with a transparent surround and a blue bookmark ribbon.
+rounded_box(draw, (380, 220, 1668, 1820), 110, PAGE, PAGE_BORDER, 14)
 draw.polygon(
-    [(1200, 360), (1440, 360), (1440, 800), (1320, 700), (1200, 800)],
+    [(1320, 220), (1560, 220), (1560, 660), (1440, 560), (1320, 660)],
     fill=ACCENT,
 )
 
-# Bold Markdown # mark.
-hash_mark(draw, (940, 1060), 500, 500, 76, ACCENT)
+# The brand mark.
+draw.text(
+    (1024, 1160),
+    "MD",
+    font=bold_font(470),
+    fill=ACCENT,
+    anchor="mm",
+)
 
 # A single page line anchors the mark.
-rounded_box(draw, (660, 1420, 1388, 1480), 30, INK)
+rounded_box(draw, (700, 1580, 1348, 1630), 25, INK)
 
 # Downscale for the window / package icon.
 icon = image.resize((512, 512), Image.LANCZOS)
