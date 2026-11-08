@@ -1,5 +1,4 @@
 use crate::app::NotepadApp;
-use crate::app::audio;
 use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BORDER, SURFACE};
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
@@ -532,12 +531,18 @@ impl NotepadApp {
                     // Document dictation. One accent button changes icon with
                     // state; the timer/status sits in a fixed container to its
                     // right so the row stays centered and stable.
-                    if self.transcribing {
+                    let show_spinner = self.transcribing || self.live_finishing;
+                    if show_spinner {
+                        let label = if self.transcribing {
+                            "Transcribing…"
+                        } else {
+                            "Finishing…"
+                        };
                         ui.allocate_ui_with_layout(
                             egui::vec2(138.0, 28.0),
                             egui::Layout::left_to_right(egui::Align::Center),
                             |ui| {
-                                dictation_button(ui, None, false, true, "Transcribing dictation…");
+                                dictation_button(ui, None, false, true, "Finishing dictation…");
                                 ui.add_space(10.0);
                                 ui.allocate_ui_with_layout(
                                     egui::vec2(96.0, 28.0),
@@ -549,16 +554,18 @@ impl NotepadApp {
                                             .rounding(6.0)
                                             .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                                             .show(ui, |ui| {
-                                                ui.label(
-                                                    egui::RichText::new("Transcribing…").small(),
-                                                );
+                                                ui.label(egui::RichText::new(label).small());
                                             });
                                     },
                                 );
                             },
                         );
-                    } else if let Some(session) = &self.recording {
-                        let secs = session.elapsed().as_secs();
+                    } else if self.live.is_some() {
+                        let secs = self
+                            .live
+                            .as_ref()
+                            .map(|session| session.elapsed().as_secs())
+                            .unwrap_or(0);
                         let stop = ui
                             .allocate_ui_with_layout(
                                 egui::vec2(106.0, 28.0),
@@ -569,7 +576,7 @@ impl NotepadApp {
                                         Some(icons::RECORD),
                                         true,
                                         true,
-                                        "Stop and transcribe dictation",
+                                        "Stop and finish dictation",
                                     )
                                     .clicked();
                                     ui.add_space(10.0);
@@ -600,52 +607,27 @@ impl NotepadApp {
                             )
                             .inner;
                         if stop {
-                            session.request_stop();
-                            self.status_message = String::from("Finishing dictation…");
+                            self.stop_live_dictation();
                         }
                     } else {
-                        let has_key = !self.api_key().is_empty();
                         let start = ui
                             .allocate_ui_with_layout(
                                 egui::vec2(32.0, 28.0),
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
-                                    // Always clickable so a missing key gets an
-                                    // immediate, actionable message.
                                     dictation_button(
                                         ui,
                                         Some(icons::MICROPHONE),
                                         true,
                                         false,
-                                        if has_key {
-                                            "Dictate into the document (60s max)"
-                                        } else {
-                                            "Add a Gemini API key in Assistant settings to dictate"
-                                        },
+                                        "Dictate into the document in real time",
                                     )
                                     .clicked()
                                 },
                             )
                             .inner;
                         if start {
-                            if !has_key {
-                                let message = String::from(
-                                    "Add a Gemini API key in Assistant settings to dictate.",
-                                );
-                                self.status_message = message.clone();
-                                self.push_toast(message, true);
-                            } else if self.chat_model.trim().is_empty() {
-                                let message = String::from(
-                                    "Pick a Gemini model in Assistant settings to dictate.",
-                                );
-                                self.status_message = message.clone();
-                                self.push_toast(message, true);
-                            } else {
-                                self.cancel_dictation(ctx);
-                                self.recording = Some(audio::start());
-                                self.status_message =
-                                    String::from("Listening… click to stop when finished.");
-                            }
+                            self.start_live_dictation(ctx);
                         }
                     }
                 });

@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-use crate::app::audio::RecordingSession;
+use crate::app::live::LiveSession;
 
 /// Events streamed from the dictation worker.
 pub enum DictationEvent {
@@ -29,6 +29,8 @@ pub struct DictationStream {
     pub inserted: String,
     /// Text received from Gemini that hasn't been revealed yet.
     pub pending: String,
+    /// Current interim live transcription shown after the finalized text.
+    pub interim: String,
     /// Whether a separating space must be added after the stream ends.
     pub after_needs_space: bool,
     /// True once Gemini finished; the pending text still needs revealing.
@@ -76,9 +78,11 @@ pub struct NotepadApp {
     pub chat_api_key: String,
     /// Show the API key in plaintext (transient UI state, not persisted).
     pub chat_show_key: bool,
-    /// Microphone recording in progress (document dictation).
-    pub recording: Option<RecordingSession>,
-    /// True while a transcription request is in flight.
+    /// Live microphone dictation session.
+    pub live: Option<LiveSession>,
+    /// True once Stop was pressed and we're waiting for the final transcript.
+    pub live_finishing: bool,
+    /// True while a dropped-file transcription request is in flight.
     pub transcribing: bool,
     pub transcribe_rx: Option<Receiver<DictationEvent>>,
     /// Set to ask the streaming worker to stop early.
@@ -102,7 +106,7 @@ pub struct NotepadApp {
 impl NotepadApp {
     /// True while the microphone is recording or Gemini is transcribing.
     pub fn is_dictating(&self) -> bool {
-        self.recording.is_some() || self.transcribing
+        self.live.is_some() || self.transcribing
     }
 
     /// Recompute the cached footer statistics after `content` changes.
@@ -187,7 +191,8 @@ impl Default for NotepadApp {
             },
             chat_api_key: crate::app::config::pick(&stored.api_key, "GEMINI_API_KEY"),
             chat_show_key: false,
-            recording: None,
+            live: None,
+            live_finishing: false,
             transcribing: false,
             transcribe_rx: None,
             transcribe_cancel: None,

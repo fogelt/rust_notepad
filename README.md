@@ -18,8 +18,9 @@ rewrite or extend it.
 - **Autosave** once the document has a file name.
 - **`rmd` command** to open or create notes from any terminal.
 - **Optional Gemini assistant** that can rewrite or extend the document.
-- **Dictation** — record up to 60 seconds, or drop an audio file, and Gemini
-  transcribes it straight into the document at the cursor.
+- **Real-time dictation** — press the microphone and Gemini streams the
+  transcription into the document as you speak. Dropped audio files are
+  transcribed too.
 - **Native installers** for Windows, macOS (Apple Silicon and Intel), Debian/
   Ubuntu, and any Linux via AppImage.
 
@@ -111,16 +112,19 @@ The assistant and dictation need a Gemini API key from
 3. Type an instruction and press **Send** to rewrite or extend the document.
 
 **Dictation** is separate from the assistant: press the microphone in the editor
-toolbar, speak, and press **Stop**. The editor locks while Gemini streams the
-transcription into the document at the cursor, replacing any selection. You can
-also drop an audio file anywhere on the window — its transcription is streamed
-into the document the same way. If Gemini rejects the request, the partial text
-is rolled back and a toast explains what to fix.
+toolbar and start speaking. The app streams 16 kHz PCM to the Gemini Live API
+(`gemini-3.5-transcribe-live`) and shows interim transcripts in the document as
+you talk; press **Stop** to commit the final transcript. The editor locks while
+dictating, replacing any selection at the cursor. You can also drop an audio file
+anywhere on the window — its transcription streams into the document the same
+way. If Gemini rejects the request, the partial text is rolled back and a toast
+explains what to fix.
 
-`Ctrl/Cmd+Enter` sends from the instruction box. Recordings are capped at
-60 seconds and dropped audio files at 14 MB; supported formats include `wav`,
-`mp3`, `m4a`, `ogg`, and `flac`. Transcription uses the selected Gemini model,
-so pick one with audio input support.
+Live dictation is available on the Gemini free tier. A streaming session can run
+for up to 10 minutes; the microphone is resampled to 16 kHz mono automatically.
+Dropped audio files are capped at 14 MB; supported formats include `wav`, `mp3`,
+`m4a`, `ogg`, and `flac`. Dropped-file transcription uses the selected assistant
+model, so pick one with audio input support.
 
 The key and model are stored locally in
 `%APPDATA%\rust_notepad\config.json` on Windows and
@@ -139,12 +143,6 @@ cargo run -- <file.md>
 cargo test
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-```
-
-The microphone smoke test is ignored by default:
-
-```bash
-cargo test --all-targets records_a_short_clip -- --ignored
 ```
 
 ### Package
@@ -170,8 +168,8 @@ depends on `libasound2` at runtime.
 - `vendor/egui_commonmark` is upstream 0.14.0 with small preview rendering
   patches (task-list bullets, line height, and code-copy UX). See its
   `PATCH.md` before updating the dependency.
-- `src/app/audio.rs` handles microphone capture, `src/app/templates.rs` holds
-  the starter documents, and `src/rmd_cli.rs` is shared by `rmd` and
-  `rust_notepad --rmd`.
+- `src/app/audio.rs` captures and resamples microphone PCM; `src/app/live.rs`
+  streams it to the Gemini Live API. `src/app/templates.rs` holds the starter
+  documents, and `src/rmd_cli.rs` is shared by `rmd` and `rust_notepad --rmd`.
 - `scripts/generate-icon.py` regenerates `assets/icon.png` and `icon.ico` with
   Python 3 + Pillow.

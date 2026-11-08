@@ -244,6 +244,11 @@ impl NotepadApp {
             visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
 
             if self.is_dictating() {
+                let (badge_icon, badge_label) = if self.transcribing {
+                    (icons::WAVEFORM, "Transcribing")
+                } else {
+                    (icons::MICROPHONE, "Dictating")
+                };
                 egui::Frame::none()
                     .stroke(egui::Stroke::new(1.5_f32, ACCENT))
                     .rounding(8.0)
@@ -260,8 +265,7 @@ impl NotepadApp {
                                         .show(ui, |ui| {
                                             ui.label(
                                                 egui::RichText::new(format!(
-                                                    "{} Dictating",
-                                                    icons::MICROPHONE
+                                                    "{badge_icon} {badge_label}"
                                                 ))
                                                 .size(11.0)
                                                 .strong()

@@ -3,6 +3,7 @@ use eframe::egui;
 pub mod audio;
 pub mod components;
 pub mod config;
+pub mod live;
 pub mod models;
 pub mod templates;
 pub mod theme;
@@ -130,5 +131,6 @@ impl eframe::App for NotepadApp {
         self.show_editor(ctx);
         // Toasts live on the foreground layer, above every panel.
         self.show_toast(ctx);
+        self.show_audio_drop_overlay(ctx);
     }
 }

@@ -1,4 +1,5 @@
 use crate::app::NotepadApp;
+use crate::app::live::LiveEvent;
 use crate::app::models::{DictationEvent, DictationStream};
 use crate::app::theme::{
     ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
@@ -89,6 +90,24 @@ fn read_audio_file(path: &Path) -> Result<Vec<u8>, String> {
         ));
     }
     Ok(bytes)
+}
+
+/// Draw a dashed straight line from `a` to `b`.
+fn dashed_line(painter: &egui::Painter, a: egui::Pos2, b: egui::Pos2, stroke: egui::Stroke) {
+    const DASH: f32 = 10.0;
+    const GAP: f32 = 6.0;
+    let delta = b - a;
+    let length = delta.length();
+    if length <= f32::EPSILON {
+        return;
+    }
+    let direction = delta / length;
+    let mut offset = 0.0;
+    while offset < length {
+        let end = (offset + DASH).min(length);
+        painter.line_segment([a + direction * offset, a + direction * end], stroke);
+        offset = end + GAP;
+    }
 }
 
 /// Build the prompt sent to Gemini: user instruction + current document.
@@ -253,12 +272,18 @@ fn friendly_gemini_error(raw: &str) -> String {
             "That Gemini model isn't available for dictation. Pick another model in Assistant settings.",
         );
     }
+    if lower.contains("live") && (lower.contains("closed") || lower.contains("acknowledge")) {
+        return String::from(
+            "Gemini Live couldn't start. Check your API key in Assistant settings and try again.",
+        );
+    }
     if lower.contains("request failed")
         || lower.contains("sending request")
         || lower.contains("connection")
         || lower.contains("timed out")
         || lower.contains("dns")
         || lower.contains("network")
+        || lower.contains("could not connect")
     {
         return String::from(
             "Could not reach Gemini. Check your internet connection and try again.",
@@ -409,7 +434,7 @@ impl NotepadApp {
     /// Poll recording and transcription for document dictation. Called once
     /// per frame so it also runs while the Assistant panel is closed.
     pub fn poll_dictation(&mut self, ctx: &egui::Context) {
-        self.poll_recording(ctx);
+        self.poll_live(ctx);
         self.poll_transcription(ctx);
         self.reveal_dictation(ctx);
         if self.is_dictating() {
@@ -417,21 +442,151 @@ impl NotepadApp {
         }
     }
 
-    /// Poll the microphone thread; when the WAV is ready, stream it to Gemini.
-    fn poll_recording(&mut self, ctx: &egui::Context) {
-        let finished = self.recording.as_ref().and_then(|session| session.poll());
-        let Some(result) = finished else {
-            return;
-        };
-        self.recording = None;
-        match result {
-            Ok(wav) => self.start_transcription(ctx, wav, "audio/wav"),
-            Err(err) => {
-                let message = format!("Microphone error: {err}");
-                self.status_message = message.clone();
-                self.push_toast(message, true);
+    /// Poll the Live API session for interim and final transcripts.
+    fn poll_live(&mut self, ctx: &egui::Context) {
+        let mut events = Vec::new();
+        if let Some(session) = self.live.as_ref() {
+            while let Some(event) = session.poll() {
+                let terminal = matches!(event, LiveEvent::Error(_) | LiveEvent::Closed);
+                events.push(event);
+                if terminal {
+                    break;
+                }
             }
         }
+        for event in events {
+            match event {
+                LiveEvent::Interim(text) => self.apply_live_interim(ctx, &text),
+                LiveEvent::Final(text) => self.apply_live_final(ctx, &text),
+                LiveEvent::Error(err) => {
+                    self.fail_live(ctx, &err);
+                    return;
+                }
+                LiveEvent::Closed => {
+                    self.finish_live(ctx);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Show an updated partial transcript, replacing the previous hypothesis.
+    fn apply_live_interim(&mut self, ctx: &egui::Context, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if self.dictation_stream.is_none() {
+            self.begin_dictation_stream(ctx);
+        }
+
+        let mut cursor = 0;
+        let mut changed = false;
+        if let Some(stream) = self.dictation_stream.as_mut() {
+            let separator = if !stream.inserted.is_empty()
+                && !stream
+                    .inserted
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_whitespace())
+                && !text.chars().next().is_some_and(|c| c.is_whitespace())
+            {
+                " "
+            } else {
+                ""
+            };
+            let next = format!("{separator}{text}");
+            if next == stream.interim {
+                return;
+            }
+
+            let start = stream.start_b + stream.inserted.len();
+            let end = start + stream.interim.len();
+            if end > self.content.len() {
+                return;
+            }
+            self.content.replace_range(start..end, &next);
+            stream.interim = next;
+            let end = start + stream.interim.len();
+            cursor = self.content[..end].chars().count();
+            changed = true;
+        }
+
+        if changed {
+            self.refresh_stats();
+            self.store_editor_cursor(ctx, cursor);
+        }
+    }
+
+    /// Commit a finalized segment, replacing the last interim hypothesis.
+    fn apply_live_final(&mut self, ctx: &egui::Context, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if self.dictation_stream.is_none() {
+            self.begin_dictation_stream(ctx);
+        }
+
+        let mut cursor = 0;
+        let mut changed = false;
+        if let Some(stream) = self.dictation_stream.as_mut() {
+            let start = stream.start_b + stream.inserted.len();
+            let end = start + stream.interim.len();
+            if end > self.content.len() {
+                return;
+            }
+            self.content.replace_range(start..end, "");
+            stream.interim.clear();
+
+            let separator = if !stream.inserted.is_empty()
+                && !stream
+                    .inserted
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_whitespace())
+                && !text.chars().next().is_some_and(|c| c.is_whitespace())
+            {
+                " "
+            } else {
+                ""
+            };
+            let commit = format!("{separator}{text}");
+            let at = stream.start_b + stream.inserted.len();
+            self.content.insert_str(at, &commit);
+            stream.inserted.push_str(&commit);
+            let end = stream.start_b + stream.inserted.len();
+            cursor = self.content[..end].chars().count();
+            changed = true;
+        }
+
+        if changed {
+            self.refresh_stats();
+            self.store_editor_cursor(ctx, cursor);
+        }
+    }
+
+    /// Finish a live session, keeping any last interim text if no final arrived.
+    fn finish_live(&mut self, ctx: &egui::Context) {
+        if self.live.is_none() && self.dictation_stream.is_none() {
+            return;
+        }
+        self.live = None;
+        self.live_finishing = false;
+        if let Some(stream) = self.dictation_stream.as_mut()
+            && !stream.interim.is_empty()
+        {
+            stream.inserted.push_str(&stream.interim);
+            stream.interim.clear();
+        }
+        self.finish_transcription(ctx);
+    }
+
+    /// Abort a live session, roll back partial text, and toast the error.
+    fn fail_live(&mut self, ctx: &egui::Context, raw: &str) {
+        if let Some(session) = self.live.take() {
+            session.request_stop();
+        }
+        self.live_finishing = false;
+        self.fail_transcription(ctx, raw);
     }
 
     /// Drain streamed dictation events. Several deltas can arrive per frame.
@@ -552,6 +707,7 @@ impl NotepadApp {
             start_b,
             inserted: String::new(),
             pending: String::new(),
+            interim: String::new(),
             after_needs_space,
             finished: false,
         });
@@ -594,7 +750,6 @@ impl NotepadApp {
 
     /// Abort the stream, roll back any partial text, and toast the error.
     fn fail_transcription(&mut self, ctx: &egui::Context, raw: &str) {
-        self.cancel_recording();
         self.transcribe_rx = None;
         self.transcribe_cancel = None;
         self.transcribing = false;
@@ -614,7 +769,10 @@ impl NotepadApp {
     /// Stop the microphone and cancel any stream in flight, rolling back the
     /// partially streamed text.
     pub fn cancel_dictation(&mut self, ctx: &egui::Context) {
-        self.cancel_recording();
+        if let Some(session) = self.live.take() {
+            session.request_stop();
+        }
+        self.live_finishing = false;
         if let Some(cancel) = self.transcribe_cancel.take() {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -624,12 +782,6 @@ impl NotepadApp {
             self.content = stream.original_content;
             self.restore_editor_range(ctx, stream.original_range);
             self.refresh_stats();
-        }
-    }
-
-    fn cancel_recording(&mut self) {
-        if let Some(session) = self.recording.take() {
-            session.request_stop();
         }
     }
 
@@ -657,6 +809,31 @@ impl NotepadApp {
             });
             state.cursor.set_char_range(range);
             state.store(ctx, id);
+        }
+    }
+
+    /// Start real-time dictation over the Gemini Live API.
+    pub fn start_live_dictation(&mut self, ctx: &egui::Context) {
+        let api_key = self.api_key();
+        if api_key.is_empty() {
+            let message = String::from("Add a Gemini API key in Assistant settings to dictate.");
+            self.status_message = message.clone();
+            self.push_toast(message, true);
+            return;
+        }
+
+        self.cancel_dictation(ctx);
+        self.live = Some(crate::app::live::start(api_key));
+        self.live_finishing = false;
+        self.status_message = String::from("Listening… speak, then click to stop.");
+    }
+
+    /// Stop the live microphone and wait for the final transcript.
+    pub fn stop_live_dictation(&mut self) {
+        if let Some(session) = self.live.as_ref() {
+            session.request_stop();
+            self.live_finishing = true;
+            self.status_message = String::from("Finishing dictation…");
         }
     }
 
@@ -696,6 +873,59 @@ impl NotepadApp {
             };
             let _ = tx.send(event);
         });
+    }
+
+    /// Draw a dashed accent drop target while an audio file is dragged over
+    /// the window.
+    pub fn show_audio_drop_overlay(&self, ctx: &egui::Context) {
+        let hovering = ctx.input(|i| {
+            i.raw.hovered_files.iter().any(|file| {
+                file.path
+                    .as_ref()
+                    .is_some_and(|path| audio_mime(path).is_some())
+            })
+        });
+        if !hovering {
+            return;
+        }
+
+        let rect = ctx.screen_rect();
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("audio_drop_overlay"),
+        ));
+        painter.rect_filled(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 34),
+        );
+
+        let border = rect.shrink(8.0);
+        let stroke = egui::Stroke::new(2.0_f32, ACCENT);
+        let corners = [
+            border.left_top(),
+            border.right_top(),
+            border.right_bottom(),
+            border.left_bottom(),
+            border.left_top(),
+        ];
+        for pair in corners.windows(2) {
+            dashed_line(&painter, pair[0], pair[1], stroke);
+        }
+
+        let galley = painter.layout_no_wrap(
+            String::from("Import audio file"),
+            egui::FontId::proportional(19.0),
+            ACCENT_TEXT,
+        );
+        let chip =
+            egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(30.0, 18.0));
+        painter.rect_filled(
+            chip,
+            9.0,
+            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 235),
+        );
+        painter.galley(chip.center() - galley.size() * 0.5, galley, ACCENT_TEXT);
     }
 
     /// Handle audio files dropped anywhere on the window: transcribe the first
@@ -748,8 +978,7 @@ impl NotepadApp {
     /// Send the instruction and the current document to Gemini.
     fn send_chat(&mut self) {
         let instruction = self.chat_input.trim().to_string();
-        if instruction.is_empty() || self.chat_busy || self.transcribing || self.recording.is_some()
-        {
+        if instruction.is_empty() || self.chat_busy || self.transcribing || self.live.is_some() {
             return;
         }
         let api_key = self.api_key();
