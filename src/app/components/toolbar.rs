@@ -1,5 +1,6 @@
 use crate::app::NotepadApp;
 use crate::app::audio;
+use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT};
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -70,6 +71,61 @@ fn toolbar_icon(ui: &mut egui::Ui, icon: &str, hover: &str) -> egui::Response {
         egui::Button::new(egui::RichText::new(icon).size(18.0)),
     )
     .on_hover_text(hover)
+}
+
+/// Accent-filled dictation button. `icon` is the glyph to show, or `None` for
+/// an animated spinner. The size stays fixed so the toolbar never jumps when
+/// the state changes.
+fn dictation_button(
+    ui: &mut egui::Ui,
+    icon: Option<&str>,
+    enabled: bool,
+    hover: &str,
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 28.0), sense);
+    let response = response.on_hover_text(hover);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, hover));
+
+    let fill = if !enabled {
+        ACCENT.gamma_multiply(0.4)
+    } else if response.hovered() {
+        ACCENT_HOVERED
+    } else {
+        ACCENT
+    };
+    ui.painter().rect_filled(rect, 5.0, fill);
+
+    match icon {
+        Some(icon) => {
+            let color = if enabled {
+                ACCENT_TEXT
+            } else {
+                ACCENT_TEXT.gamma_multiply(0.55)
+            };
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                icon,
+                egui::FontId::proportional(18.0),
+                color,
+            );
+        }
+        None => {
+            let spinner_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
+            ui.put(spinner_rect, egui::Spinner::new().color(ACCENT_TEXT));
+        }
+    }
+
+    if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    }
 }
 
 impl NotepadApp {
@@ -433,45 +489,88 @@ impl NotepadApp {
                         action = Some(15);
                     }
                     ui.separator();
-                    // Document dictation. The mic writes the transcription
-                    // straight into the editor at the cursor.
+                    // Document dictation. One accent button changes icon with
+                    // state; the timer/status sits in a fixed container to its
+                    // right so the row stays centered and stable.
                     if self.transcribing {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Transcribing…").small());
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(138.0, 28.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                dictation_button(ui, None, false, "Transcribing dictation…");
+                                ui.add_space(10.0);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(96.0, 28.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(egui::RichText::new("Transcribing…").small());
+                                    },
+                                );
+                            },
+                        );
                     } else if let Some(session) = &self.recording {
                         let secs = session.elapsed().as_secs();
-                        ui.colored_label(
-                            egui::Color32::from_rgb(232, 112, 112),
-                            format!("{} {:02}:{:02}", icons::RECORD, secs / 60, secs % 60),
-                        );
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new(format!("{} Stop", icons::STOP_CIRCLE))
-                                    .strong(),
-                            ))
-                            .on_hover_text("Stop and transcribe dictation")
-                            .clicked()
-                        {
+                        let stop = ui
+                            .allocate_ui_with_layout(
+                                egui::vec2(98.0, 28.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let stop = dictation_button(
+                                        ui,
+                                        Some(icons::RECORD),
+                                        true,
+                                        "Stop and transcribe dictation",
+                                    )
+                                    .clicked();
+                                    ui.add_space(10.0);
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(56.0, 28.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(232, 112, 112),
+                                                egui::RichText::new(format!(
+                                                    "{:02}:{:02}",
+                                                    secs / 60,
+                                                    secs % 60
+                                                ))
+                                                .strong(),
+                                            );
+                                        },
+                                    );
+                                    stop
+                                },
+                            )
+                            .inner;
+                        if stop {
                             session.request_stop();
                             self.status_message = String::from("Finishing dictation…");
                         }
                     } else {
                         let has_key = !self.api_key().is_empty();
-                        let mic =
-                            egui::Button::new(egui::RichText::new(icons::MICROPHONE).size(18.0))
-                                .min_size(egui::vec2(32.0, 28.0));
-                        if ui
-                            .add_enabled(has_key, mic)
-                            .on_hover_text(if has_key {
-                                "Dictate into the document (60s max)"
-                            } else {
-                                "Add a Gemini API key in Assistant settings to dictate"
-                            })
-                            .clicked()
-                        {
+                        let start = ui
+                            .allocate_ui_with_layout(
+                                egui::vec2(32.0, 28.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    dictation_button(
+                                        ui,
+                                        Some(icons::MICROPHONE),
+                                        has_key,
+                                        if has_key {
+                                            "Dictate into the document (60s max)"
+                                        } else {
+                                            "Add a Gemini API key in Assistant settings to dictate"
+                                        },
+                                    )
+                                    .clicked()
+                                },
+                            )
+                            .inner;
+                        if start {
                             self.recording = Some(audio::start());
                             self.status_message =
-                                String::from("Listening… click Stop when finished.");
+                                String::from("Listening… click to stop when finished.");
                         }
                     }
                 });
