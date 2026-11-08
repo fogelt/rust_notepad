@@ -5,7 +5,6 @@ use eframe::egui;
 impl NotepadApp {
     pub fn show_bottom_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
-            .show_separator_line(false)
             .frame(
                 egui::Frame::none()
                     .fill(BG_ELEVATED)
