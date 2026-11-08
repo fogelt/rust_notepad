@@ -346,7 +346,8 @@ impl NotepadApp {
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 frame.show(ui, |ui| {
-                    ui.set_min_width(250.0);
+                    ui.set_width(240.0);
+                    ui.spacing_mut().slider_width = 80.0;
                     self.show_settings_menu_contents(ui);
                 });
             });
@@ -441,7 +442,6 @@ impl NotepadApp {
             self.ui_settings = UiSettings::default();
             self.save_ui_settings();
         }
-        ui.weak("Saved automatically.");
     }
 
     /// Persist appearance settings without touching the assistant credentials.
@@ -466,12 +466,14 @@ fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Res
     let galley =
         ui.painter()
             .layout_no_wrap(String::from("Settings"), font, egui::Color32::PLACEHOLDER);
-    let padding = egui::vec2(8.0, 3.0);
+    let padding = egui::vec2(8.0, 0.0);
     let arrow_space = 18.0;
-    let size = egui::vec2(
-        galley.size().x + padding.x * 2.0 + arrow_space,
-        (galley.size().y + padding.y * 2.0).max(20.0),
-    );
+    let height = ui
+        .spacing()
+        .interact_size
+        .y
+        .max(galley.size().y + padding.y * 2.0);
+    let size = egui::vec2(galley.size().x + padding.x * 2.0 + arrow_space, height);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let hovered = response.hovered();
     let visuals = if open {

@@ -18,6 +18,13 @@ impl NotepadApp {
         });
     }
 
+    /// Show an error toast. The footer only needs a short summary because the
+    /// toast carries the actionable message.
+    pub fn report_error(&mut self, message: impl Into<String>) {
+        self.status_message = String::from("Error encountered.");
+        self.push_toast(message, true);
+    }
+
     pub fn show_toast(&mut self, ctx: &egui::Context) {
         let Some(toast) = &self.toast else {
             return;
@@ -45,11 +52,18 @@ impl NotepadApp {
             .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -44.0))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                egui::Frame::none()
+                let frame = egui::Frame::none()
                     .fill(BG_ELEVATED)
                     .stroke(egui::Stroke::new(1.5_f32, edge))
                     .rounding(8.0)
-                    .inner_margin(egui::Margin::symmetric(12.0, 9.0))
+                    // Extra right margin keeps the close button clear of the
+                    // wrapping message.
+                    .inner_margin(egui::Margin {
+                        left: 12.0,
+                        right: 44.0,
+                        top: 9.0,
+                        bottom: 9.0,
+                    })
                     .shadow(egui::epaint::Shadow {
                         offset: egui::vec2(0.0, 4.0),
                         blur: 12.0,
@@ -57,29 +71,49 @@ impl NotepadApp {
                         color: egui::Color32::from_black_alpha(110),
                     })
                     .show(ui, |ui| {
-                        ui.set_max_width(440.0);
-                        ui.horizontal(|ui| {
+                        ui.set_max_width(400.0);
+                        ui.horizontal_top(|ui| {
                             ui.label(egui::RichText::new(icon).size(18.0).color(edge));
                             ui.add(
                                 egui::Label::new(egui::RichText::new(&message).color(TEXT))
                                     .wrap(true),
                             );
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new(icons::X)
-                                            .size(13.0)
-                                            .color(ui.visuals().weak_text_color()),
-                                    )
-                                    .frame(false),
-                                )
-                                .on_hover_text("Dismiss")
-                                .clicked()
-                            {
-                                dismiss = true;
-                            }
                         });
                     });
+
+                let rect = frame.response.rect;
+                let close_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.right() - 34.0, rect.top() + 6.0),
+                    egui::vec2(20.0, 20.0),
+                );
+                let close_response = ui
+                    .interact(
+                        close_rect,
+                        ui.id().with("toast_close"),
+                        egui::Sense::click(),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text("Dismiss");
+                let close_color = if close_response.hovered() {
+                    ui.painter().rect_filled(
+                        close_rect,
+                        4.0,
+                        ui.visuals().widgets.hovered.weak_bg_fill,
+                    );
+                    ui.visuals().text_color()
+                } else {
+                    ui.visuals().weak_text_color()
+                };
+                ui.painter().text(
+                    close_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "×",
+                    egui::FontId::proportional(16.0),
+                    close_color,
+                );
+                if close_response.clicked() {
+                    dismiss = true;
+                }
             });
 
         if dismiss {

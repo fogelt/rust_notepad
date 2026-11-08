@@ -761,8 +761,7 @@ impl NotepadApp {
         }
 
         let message = friendly_gemini_error(raw);
-        self.status_message = message.clone();
-        self.push_toast(message, true);
+        self.report_error(message);
         self.focus_editor(ctx);
     }
 
@@ -817,8 +816,7 @@ impl NotepadApp {
         let api_key = self.api_key();
         if api_key.is_empty() {
             let message = String::from("Add a Gemini API key in Assistant settings to dictate.");
-            self.status_message = message.clone();
-            self.push_toast(message, true);
+            self.report_error(message);
             return;
         }
 
@@ -843,15 +841,13 @@ impl NotepadApp {
         let api_key = self.api_key();
         if api_key.is_empty() {
             let message = String::from("Add a Gemini API key in Assistant settings to dictate.");
-            self.status_message = message.clone();
-            self.push_toast(message, true);
+            self.report_error(message);
             return;
         }
         let model = self.chat_model.trim().to_string();
         if model.is_empty() {
             let message = String::from("Pick a Gemini model in Assistant settings to dictate.");
-            self.status_message = message.clone();
-            self.push_toast(message, true);
+            self.report_error(message);
             return;
         }
 
@@ -942,8 +938,7 @@ impl NotepadApp {
         if self.api_key().is_empty() {
             let message =
                 String::from("Add a Gemini API key in Assistant settings to transcribe audio.");
-            self.status_message = message.clone();
-            self.push_toast(message, true);
+            self.report_error(message);
             return;
         }
 
@@ -954,8 +949,7 @@ impl NotepadApp {
             }
             Err(err) => {
                 let message = format!("Could not use {name}: {err}");
-                self.status_message = message.clone();
-                self.push_toast(message, true);
+                self.report_error(message);
             }
         }
     }
