@@ -1,6 +1,6 @@
 [package]
 name = "rust_notepad"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.87"
 description = "A lightweight Markdown text editor built in Rust."
@@ -42,7 +42,7 @@ strip = true
 [package.metadata.packager]
 product_name = "Rusty Notepad"
 identifier = "com.rustynotepad.app"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight Markdown text editor built in Rust."
 authors = ["fogeL"]
 publisher = "Rusty Notepad"
