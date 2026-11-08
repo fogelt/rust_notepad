@@ -4,8 +4,15 @@ use eframe::egui;
 use std::path::PathBuf;
 
 mod app;
+mod rmd_cli;
 
 fn main() -> eframe::Result<()> {
+    // The AppImage wrapper launches the GUI with `--rmd` when the bundled
+    // `rmd` command is used (the real rmd binary is inside the AppImage).
+    if std::env::args().nth(1).as_deref() == Some("--rmd") {
+        std::process::exit(rmd_cli::run_with(std::env::args().skip(2)));
+    }
+
     // Load GEMINI_API_KEY (and optional GEMINI_MODEL) from .env; ignored if absent.
     let _ = dotenvy::dotenv();
     let args: Vec<String> = std::env::args().collect();
@@ -31,6 +38,7 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size(crate::app::theme::WINDOW_MIN_SIZE)
         .with_min_inner_size(crate::app::theme::WINDOW_MIN_SIZE)
+        .with_drag_and_drop(true)
         .with_title("Rusty Notepad");
 
     if let Some(icon) = icon_data {
@@ -50,6 +58,7 @@ fn main() -> eframe::Result<()> {
             let mut fonts = egui::FontDefinitions::default();
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
             cc.egui_ctx.set_fonts(fonts);
+            crate::app::theme::apply(&cc.egui_ctx);
             Box::new(app::NotepadApp::with_file(initial_path))
         }),
     )

@@ -2,6 +2,11 @@
 name = "rust_notepad"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.87"
+description = "A lightweight Markdown text editor built in Rust."
+repository = "https://github.com/fogelt/rust_notepad"
+homepage = "https://github.com/fogelt/rust_notepad"
+default-run = "rust_notepad"
 build = "build.rs"
 
 [dependencies]
@@ -14,9 +19,22 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dotenvy = "0.15"
+cpal = "0.15"
+base64 = "0.22"
 
 [build-dependencies]
 winresource = "0.1"
+
+# Vendored to fix task-list items drawing a bullet dot next to the checkbox.
+# Only egui_commonmark's task-marker rendering differs from 0.14.0.
+[patch.crates-io]
+egui_commonmark = { path = "vendor/egui_commonmark" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [package.metadata.packager]
 product_name = "Rusty Notepad"
@@ -24,6 +42,9 @@ identifier = "com.rustynotepad.app"
 version = "0.1.0"
 description = "A lightweight Markdown text editor built in Rust."
 authors = ["fogeL"]
+publisher = "Rusty Notepad"
+homepage = "https://github.com/fogelt/rust_notepad"
+category = "Productivity"
 
 before_packaging_command = "cargo build --release"
 
@@ -31,10 +52,16 @@ icons = [
     "assets/icon.ico",
     "assets/icon.png"
 ]
-formats = ["nsis", "deb", "appimage"]
 
-# rmd.cmd ships next to the exe so `rmd file.md` works (see nsis section for PATH).
-resources = [{ src = "scripts/rmd.cmd", target = "rmd.cmd" }]
+# One format per desktop platform. `cargo packager` builds the ones supported
+# by the host OS:
+#   Windows -> .exe (NSIS)   macOS -> .dmg
+#   Linux   -> .deb + .AppImage
+formats = ["nsis", "dmg", "deb", "appimage"]
+
+# Both bin targets are packaged automatically: `rust_notepad` (main) and
+# `rmd` (the console helper). NSIS puts the install dir on PATH below, and
+# .deb installs both under /usr/bin, so `rmd` works after installation.
 
 # Double-click support (NSIS registers + unregisters this; deb gets %F + MimeType).
 [[package.metadata.packager.fileAssociations]]
@@ -54,6 +81,8 @@ preinstall-section = '''
 ; --- Rusty Notepad: expose `rmd` on PATH ---
 Section "-AddInstallDirToPath"
   !insertmacro SetContext
+  ; Remove the legacy rmd.cmd shim from older builds; rmd is a real binary now.
+  Delete "$INSTDIR\rmd.cmd"
   ReadRegStr $R0 SHCTX "Environment" "Path"
   StrCpy $R1 ";$R0;"
   ${StrLoc} $R2 $R1 ";$INSTDIR;" ">"
@@ -101,7 +130,11 @@ FunctionEnd
 
 [package.metadata.packager.macos]
 minimum_system_version = "10.13"
+# Adds NSMicrophoneUsageDescription for voice instructions.
+info_plist_path = "assets/macos/Info.plist"
 
 [package.metadata.packager.deb]
 priority = "optional"
 section = "editors"
+# cpal links ALSA for microphone capture.
+depends = ["libasound2"]

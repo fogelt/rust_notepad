@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
+use crate::app::audio::RecordingSession;
 use crate::app::components::ai_chat::ChatOutcome;
 
 /// Visibility toggles for the three main panels, driven by the header tabs.
@@ -45,21 +46,57 @@ pub struct NotepadApp {
     pub chat_models_error: Option<String>,
     /// Successful Gemini requests this session, per model id.
     pub chat_session_requests: HashMap<String, u32>,
+    /// Microphone recording in progress (voice instruction).
+    pub recording: Option<RecordingSession>,
+    /// True while a transcription request is in flight.
+    pub transcribing: bool,
+    pub transcribe_rx: Option<Receiver<Result<String, String>>>,
     /// Last seen monitor size / DPI, to detect screen changes.
     pub last_monitor_size: Option<[f32; 2]>,
     pub last_native_ppp: Option<f32>,
+    /// Title currently set on the OS window (avoids re-sending it every frame).
+    pub window_title: Option<String>,
+    /// Cached document statistics for the footer (refreshed on edits).
+    pub word_count: usize,
+    pub char_count: usize,
 }
 
 impl NotepadApp {
+    /// Recompute the cached footer statistics after `content` changes.
+    pub fn refresh_stats(&mut self) {
+        self.word_count = self.content.split_whitespace().count();
+        self.char_count = self.content.chars().count();
+    }
+
+    /// Call after a programmatic edit (toolbar or assistant). Autosaves when
+    /// the document has a path; otherwise reports unsaved changes.
+    pub fn note_content_changed(&mut self) {
+        self.refresh_stats();
+        if let Some(path) = &self.file_path {
+            match std::fs::write(path, &self.content) {
+                Ok(()) => self.status_message = String::from("Autosaved changes."),
+                Err(err) => self.status_message = format!("Autosave failed: {err}"),
+            }
+        } else {
+            self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        }
+    }
+
     pub fn with_file(path: Option<PathBuf>) -> Self {
         if let Some(p) = path {
             match std::fs::read_to_string(&p) {
-                Ok(text) => Self {
-                    content: text,
-                    status_message: format!("Opened: {:?}", p.file_name().unwrap()),
-                    file_path: Some(p),
-                    ..Default::default()
-                },
+                Ok(text) => {
+                    let word_count = text.split_whitespace().count();
+                    let char_count = text.chars().count();
+                    Self {
+                        content: text,
+                        status_message: format!("Opened: {:?}", p.file_name().unwrap()),
+                        file_path: Some(p),
+                        word_count,
+                        char_count,
+                        ..Default::default()
+                    }
+                }
                 // A missing file means "new note at this path": keep the path
                 // so the first Save writes where the user asked (e.g. `rmd notes.md`).
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self {
@@ -105,8 +142,14 @@ impl Default for NotepadApp {
             chat_models_rx: None,
             chat_models_error: None,
             chat_session_requests: HashMap::new(),
+            recording: None,
+            transcribing: false,
+            transcribe_rx: None,
             last_monitor_size: None,
             last_native_ppp: None,
+            window_title: None,
+            word_count: 0,
+            char_count: 0,
         }
     }
 }
@@ -142,6 +185,8 @@ mod tests {
         let app = NotepadApp::with_file(Some(path.clone()));
         assert_eq!(app.content, "# hi");
         assert_eq!(app.file_path, Some(path));
+        assert_eq!(app.word_count, 2);
+        assert_eq!(app.char_count, 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -161,7 +161,7 @@ impl NotepadApp {
                 )),
             );
         }
-        self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        self.note_content_changed();
     }
 
     /// Toggle a line prefix (quote, bullet, task) on every line in the
@@ -189,7 +189,7 @@ impl NotepadApp {
                     CCursor::new(total_c),
                 )),
             );
-            self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+            self.note_content_changed();
             return;
         }
 
@@ -212,7 +212,7 @@ impl NotepadApp {
             ctx,
             Some(CCursorRange::two(CCursor::new(end_c), CCursor::new(end_c))),
         );
-        self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        self.note_content_changed();
     }
 
     fn apply_heading(&mut self, ctx: &egui::Context, level: u8) {
@@ -239,7 +239,7 @@ impl NotepadApp {
                     CCursor::new(total_c),
                 )),
             );
-            self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+            self.note_content_changed();
             return;
         }
 
@@ -262,7 +262,7 @@ impl NotepadApp {
             ctx,
             Some(CCursorRange::two(CCursor::new(end_c), CCursor::new(end_c))),
         );
-        self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        self.note_content_changed();
     }
 
     fn apply_ordered_list(&mut self, ctx: &egui::Context) {
@@ -287,7 +287,7 @@ impl NotepadApp {
                     CCursor::new(total_c),
                 )),
             );
-            self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+            self.note_content_changed();
             return;
         }
 
@@ -317,7 +317,7 @@ impl NotepadApp {
             ctx,
             Some(CCursorRange::two(CCursor::new(end_c), CCursor::new(end_c))),
         );
-        self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        self.note_content_changed();
     }
 
     /// Insert a (possibly multi-line) snippet at the cursor, ensuring blank
@@ -351,98 +351,83 @@ impl NotepadApp {
             self.content.push_str(snippet);
             self.content.push('\n');
         }
-        self.status_message = String::from("Unsaved changes (Save file to enable autosave).");
+        self.note_content_changed();
     }
 
     pub fn show_markdown_toolbar(&mut self, ctx: &egui::Context) {
         // Dispatch id set by the clicked button below.
         let mut action: Option<u8> = None;
 
-        egui::TopBottomPanel::top("markdown_toolbar").show(ctx, |ui| {
-            egui::Frame::none()
-                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
+        egui::TopBottomPanel::top("markdown_toolbar")
+            .frame(
+                egui::Frame::none()
+                    .fill(crate::app::theme::BG_ELEVATED)
+                    .inner_margin(egui::Margin::symmetric(8.0, 4.0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
 
-                        // Inline formatting
-                        if toolbar_icon(ui, icons::TEXT_B, "Bold (**text**)").clicked() {
-                            action = Some(0);
-                        }
-                        if toolbar_icon(ui, icons::TEXT_ITALIC, "Italic (*text*)").clicked() {
-                            action = Some(1);
-                        }
-                        if toolbar_icon(ui, icons::TEXT_STRIKETHROUGH, "Strikethrough (~~text~~)")
-                            .clicked()
-                        {
-                            action = Some(2);
-                        }
-                        if toolbar_icon(ui, icons::CODE_SIMPLE, "Inline code (`code`)").clicked() {
-                            action = Some(3);
-                        }
-                        ui.separator();
-                        // Headings
-                        if toolbar_icon(ui, icons::TEXT_H_ONE, "Heading 1 (# )").clicked() {
-                            action = Some(4);
-                        }
-                        if toolbar_icon(ui, icons::TEXT_H_TWO, "Heading 2 (## )").clicked() {
-                            action = Some(5);
-                        }
-                        if toolbar_icon(ui, icons::TEXT_H_THREE, "Heading 3 (### )").clicked() {
-                            action = Some(6);
-                        }
-                        ui.separator();
-                        // Blocks / lists
-                        if toolbar_icon(ui, icons::QUOTES, "Blockquote (> )").clicked() {
-                            action = Some(7);
-                        }
-                        if toolbar_icon(ui, icons::LIST_BULLETS, "Bullet list (- )").clicked() {
-                            action = Some(8);
-                        }
-                        if toolbar_icon(ui, icons::LIST_NUMBERS, "Ordered list (1. 2. 3.)")
-                            .clicked()
-                        {
-                            action = Some(9);
-                        }
-                        if toolbar_icon(ui, icons::CHECK_SQUARE, "Task list (- [ ] )").clicked() {
-                            action = Some(10);
-                        }
-                        ui.separator();
-                        // Inserts
-                        if toolbar_icon(ui, icons::LINK_SIMPLE, "Link ([text](url))").clicked() {
-                            action = Some(11);
-                        }
-                        if toolbar_icon(ui, icons::IMAGE, "Image (![alt](url))").clicked() {
-                            action = Some(12);
-                        }
-                        if toolbar_icon(ui, icons::CODE_BLOCK, "Code block (```)").clicked() {
-                            action = Some(13);
-                        }
-                        if toolbar_icon(ui, icons::MINUS, "Horizontal rule (---)").clicked() {
-                            action = Some(14);
-                        }
-                        if toolbar_icon(ui, icons::TABLE, "Insert table").clicked() {
-                            action = Some(15);
-                        }
-                        ui.separator();
-                        // AI assistant (colored to stand out)
-                        let ai = egui::Button::new(
-                            egui::RichText::new(icons::SPARKLE)
-                                .size(18.0)
-                                .color(egui::Color32::WHITE),
-                        )
-                        .fill(egui::Color32::from_rgb(124, 92, 255));
-                        if ui
-                            .add_sized([32.0, 28.0], ai)
-                            .on_hover_text("Ask Gemini to edit/write the Markdown")
-                            .clicked()
-                        {
-                            self.tabs.assistant = !self.tabs.assistant;
-                        }
-                    });
+                    // Inline formatting
+                    if toolbar_icon(ui, icons::TEXT_B, "Bold (**text**)").clicked() {
+                        action = Some(0);
+                    }
+                    if toolbar_icon(ui, icons::TEXT_ITALIC, "Italic (*text*)").clicked() {
+                        action = Some(1);
+                    }
+                    if toolbar_icon(ui, icons::TEXT_STRIKETHROUGH, "Strikethrough (~~text~~)")
+                        .clicked()
+                    {
+                        action = Some(2);
+                    }
+                    if toolbar_icon(ui, icons::CODE_SIMPLE, "Inline code (`code`)").clicked() {
+                        action = Some(3);
+                    }
+                    ui.separator();
+                    // Headings
+                    if toolbar_icon(ui, icons::TEXT_H_ONE, "Heading 1 (# )").clicked() {
+                        action = Some(4);
+                    }
+                    if toolbar_icon(ui, icons::TEXT_H_TWO, "Heading 2 (## )").clicked() {
+                        action = Some(5);
+                    }
+                    if toolbar_icon(ui, icons::TEXT_H_THREE, "Heading 3 (### )").clicked() {
+                        action = Some(6);
+                    }
+                    ui.separator();
+                    // Blocks / lists
+                    if toolbar_icon(ui, icons::QUOTES, "Blockquote (> )").clicked() {
+                        action = Some(7);
+                    }
+                    if toolbar_icon(ui, icons::LIST_BULLETS, "Bullet list (- )").clicked() {
+                        action = Some(8);
+                    }
+                    if toolbar_icon(ui, icons::LIST_NUMBERS, "Ordered list (1. 2. 3.)").clicked() {
+                        action = Some(9);
+                    }
+                    if toolbar_icon(ui, icons::CHECK_SQUARE, "Task list (- [ ] )").clicked() {
+                        action = Some(10);
+                    }
+                    ui.separator();
+                    // Inserts
+                    if toolbar_icon(ui, icons::LINK_SIMPLE, "Link ([text](url))").clicked() {
+                        action = Some(11);
+                    }
+                    if toolbar_icon(ui, icons::IMAGE, "Image (![alt](url))").clicked() {
+                        action = Some(12);
+                    }
+                    if toolbar_icon(ui, icons::CODE_BLOCK, "Code block (```)").clicked() {
+                        action = Some(13);
+                    }
+                    if toolbar_icon(ui, icons::MINUS, "Horizontal rule (---)").clicked() {
+                        action = Some(14);
+                    }
+                    if toolbar_icon(ui, icons::TABLE, "Insert table").clicked() {
+                        action = Some(15);
+                    }
                 });
-        });
+            });
 
         match action {
             Some(0) => self.wrap_selection(ctx, "**", "**", "bold text"),

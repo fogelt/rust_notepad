@@ -1,8 +1,10 @@
 use eframe::egui;
 
+pub mod audio;
 pub mod components;
 pub mod config;
 pub mod models;
+pub mod templates;
 pub mod theme;
 
 pub use models::NotepadApp;
@@ -78,14 +80,48 @@ impl NotepadApp {
             )));
         }
     }
+
+    /// Keep the OS window title in sync with the open document. Only sends a
+    /// viewport command when the title actually changes.
+    fn update_window_title(&mut self, ctx: &egui::Context) {
+        let title = match self.file_path.as_ref().and_then(|p| p.file_name()) {
+            Some(name) => format!("{} — Rusty Notepad", name.to_string_lossy()),
+            None => String::from("Rusty Notepad"),
+        };
+        if self.window_title.as_deref() != Some(title.as_str()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.window_title = Some(title);
+        }
+    }
+
+    /// F11 toggles real fullscreen (Esc leaves it). Handy for reading the
+    /// preview with zero chrome.
+    fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+        let toggle = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F11));
+        let fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        // Only claim Esc while fullscreen; otherwise it belongs to menus/popups.
+        let escape = fullscreen
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if toggle || escape {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fullscreen));
+        }
+    }
 }
 
 impl eframe::App for NotepadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.snap_to_min_on_monitor_change(ctx);
         self.enforce_min_window_size(ctx);
+        self.update_window_title(ctx);
+        self.handle_global_shortcuts(ctx);
+        // Audio files can be dropped anywhere; open the assistant and transcribe.
+        self.handle_dropped_audio(ctx);
         self.show_top_bar(ctx);
-        self.show_markdown_toolbar(ctx);
+        // The markdown toolbar only acts on the editor, so don't waste vertical
+        // space on it while the editor is hidden (e.g. full-width preview).
+        if self.tabs.editor {
+            self.show_markdown_toolbar(ctx);
+        }
         self.show_chat_panel(ctx);
         // Declared after the side panels so the footer paints last
         // (on top of everything) and spans the width between them.
