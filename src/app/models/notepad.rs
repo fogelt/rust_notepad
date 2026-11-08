@@ -40,10 +40,6 @@ pub struct NotepadApp {
     pub chat_api_key: String,
     /// Show the API key in plaintext (transient UI state, not persisted).
     pub chat_show_key: bool,
-    pub chat_models: Vec<String>,
-    pub chat_models_loading: bool,
-    pub chat_models_rx: Option<Receiver<Result<Vec<String>, String>>>,
-    pub chat_models_error: Option<String>,
     /// Successful Gemini requests this session, per model id.
     pub chat_session_requests: HashMap<String, u32>,
     /// Microphone recording in progress (voice instruction).
@@ -134,13 +130,16 @@ impl Default for NotepadApp {
             chat_error: None,
             chat_busy: false,
             chat_rx: None,
-            chat_model: crate::app::config::pick(&stored.model, "GEMINI_MODEL"),
+            chat_model: {
+                let model = crate::app::config::pick(&stored.model, "GEMINI_MODEL");
+                if model.is_empty() {
+                    crate::app::components::ai_chat::default_model().to_string()
+                } else {
+                    model
+                }
+            },
             chat_api_key: crate::app::config::pick(&stored.api_key, "GEMINI_API_KEY"),
             chat_show_key: false,
-            chat_models: Vec::new(),
-            chat_models_loading: false,
-            chat_models_rx: None,
-            chat_models_error: None,
             chat_session_requests: HashMap::new(),
             recording: None,
             transcribing: false,

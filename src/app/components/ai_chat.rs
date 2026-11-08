@@ -1,8 +1,8 @@
 use crate::app::NotepadApp;
 use crate::app::audio;
 use crate::app::theme::{
-    ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, MIN_EDITOR_WIDTH,
-    MIN_SIDE_PANEL_WIDTH, panel_frame, panel_header,
+    ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
+    MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, SURFACE, header_close_button, panel_frame,
 };
 use eframe::egui;
 use egui::text::CCursorRange;
@@ -15,6 +15,45 @@ use std::sync::mpsc;
 pub struct ChatOutcome {
     pub model: String,
     pub result: Result<String, String>,
+}
+
+/// A small, curated set of models that work well for Markdown editing and
+/// voice instructions. Showing the whole live model catalog is overwhelming
+/// and includes many unrelated models.
+pub struct ModelChoice {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub note: &'static str,
+}
+
+pub const MODELS: &[ModelChoice] = &[
+    ModelChoice {
+        id: "gemini-2.5-flash",
+        label: "Gemini 2.5 Flash",
+        note: "Recommended",
+    },
+    ModelChoice {
+        id: "gemini-2.5-flash-lite",
+        label: "Gemini 2.5 Flash Lite",
+        note: "Fastest",
+    },
+    ModelChoice {
+        id: "gemini-3.1-flash-lite",
+        label: "Gemini 3.1 Flash Lite",
+        note: "Higher free limit",
+    },
+];
+
+pub fn default_model() -> &'static str {
+    MODELS[0].id
+}
+
+pub fn model_label(id: &str) -> String {
+    MODELS
+        .iter()
+        .find(|model| model.id == id)
+        .map(|model| format!("{} · {}", model.label, model.note))
+        .unwrap_or_else(|| id.to_string())
 }
 
 /// Free-tier rate limit snapshot (peak use over 28d / limit).
@@ -179,16 +218,6 @@ pub const RATE_LIMITS: &[RateLimit] = &[
     },
 ];
 
-/// Model ids with a non-zero free-tier limit, used when the live list
-/// cannot be fetched.
-pub fn fallback_models() -> Vec<String> {
-    RATE_LIMITS
-        .iter()
-        .filter(|l| l.rpm > 0 || l.rpd > 0)
-        .map(|l| l.id.to_string())
-        .collect()
-}
-
 /// Gemini inline requests are capped around 20 MB; base64 adds ~33%, so keep
 /// dropped files comfortably below that.
 const MAX_AUDIO_BYTES: usize = 14 * 1024 * 1024;
@@ -274,44 +303,6 @@ pub fn fmt_num(n: u64) -> String {
     } else {
         n.to_string()
     }
-}
-
-/// List models available to this API key via `GET v1beta/models`,
-/// keeping only those that support `generateContent`.
-fn fetch_models(api_key: &str) -> Result<Vec<String>, String> {
-    let resp = reqwest::blocking::Client::new()
-        .get("https://generativelanguage.googleapis.com/v1beta/models")
-        .query(&[("key", api_key)])
-        .send()
-        .map_err(|e| format!("Could not list models: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("Could not list models: {}", resp.status()));
-    }
-    let json: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("Could not parse model list: {e}"))?;
-    let mut models = json["models"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|m| {
-            let name = m["name"].as_str()?;
-            let methods = m["supportedGenerationMethods"].as_array();
-            let supports =
-                methods.is_some_and(|ms| ms.iter().any(|v| v.as_str() == Some("generateContent")));
-            if supports {
-                Some(name.strip_prefix("models/").unwrap_or(name).to_string())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    models.sort();
-    if models.is_empty() {
-        return Err("No generateContent models returned for this key.".to_string());
-    }
-    Ok(models)
 }
 
 /// Build the prompt sent to Gemini: user instruction + current document.
@@ -491,37 +482,6 @@ impl NotepadApp {
         }
     }
 
-    fn poll_models(&mut self) {
-        if let Some(rx) = self.chat_models_rx.as_ref()
-            && let Ok(result) = rx.try_recv()
-        {
-            match result {
-                Ok(models) => {
-                    if self.chat_model.is_empty() || !models.iter().any(|m| m == &self.chat_model) {
-                        // Keep a usable selection: prefer the previous
-                        // default, otherwise the first live model.
-                        if let Some(first) = models.first() {
-                            self.chat_model = first.clone();
-                        }
-                    }
-                    self.chat_models = models;
-                    self.chat_models_error = None;
-                }
-                Err(err) => {
-                    self.chat_models = fallback_models();
-                    if self.chat_model.is_empty()
-                        && let Some(first) = self.chat_models.first()
-                    {
-                        self.chat_model = first.clone();
-                    }
-                    self.chat_models_error = Some(err);
-                }
-            }
-            self.chat_models_rx = None;
-            self.chat_models_loading = false;
-        }
-    }
-
     /// Poll the microphone thread; when the WAV is ready, transcribe it.
     fn poll_recording(&mut self) {
         let finished = self.recording.as_ref().and_then(|session| session.poll());
@@ -647,23 +607,6 @@ impl NotepadApp {
 
     /// Fetch the live model list once (needs the API key). Falls back to
     /// the static snapshot when the request fails.
-    fn ensure_models_loaded(&mut self) {
-        if !self.chat_models.is_empty() || self.chat_models_loading || self.chat_models_rx.is_some()
-        {
-            return;
-        }
-        let api_key = self.api_key();
-        if api_key.is_empty() {
-            return;
-        }
-        let (tx, rx) = mpsc::channel();
-        self.chat_models_rx = Some(rx);
-        self.chat_models_loading = true;
-        std::thread::spawn(move || {
-            let _ = tx.send(fetch_models(&api_key));
-        });
-    }
-
     fn send_chat(&mut self) {
         let instruction = self.chat_input.trim().to_string();
         if instruction.is_empty() || self.chat_busy || self.transcribing || self.recording.is_some()
@@ -799,7 +742,7 @@ impl NotepadApp {
             }
         });
         if !self.chat_api_key.trim().is_empty() && !self.chat_api_key.trim().starts_with("AIza") {
-            ui.weak("Keys usually start with “AIza” — check for extra spaces.");
+            ui.weak("Keys usually start with AIza — check for extra spaces.");
         }
         ui.horizontal(|ui| {
             if ui.button("Save key & model").clicked() {
@@ -813,50 +756,43 @@ impl NotepadApp {
                         self.chat_error = None;
                         self.status_message =
                             format!("Assistant settings saved to {}.", path.display());
-                        // A fresh key may unlock the live model list.
-                        self.ensure_models_loaded();
                     }
                     Err(err) => self.chat_error = Some(err),
                 }
             }
             ui.weak("Stored locally.");
         });
+        ui.hyperlink_to(
+            "Get a Gemini API key",
+            "https://aistudio.google.com/api-keys",
+        );
+
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("Model").strong());
+        let current = self.chat_model.clone();
+        egui::ComboBox::from_id_source("gemini_model")
+            .width(ui.available_width())
+            .selected_text(model_label(&self.chat_model))
+            .show_ui(ui, |ui| {
+                for model in MODELS {
+                    ui.selectable_value(
+                        &mut self.chat_model,
+                        model.id.to_string(),
+                        format!("{} · {}", model.label, model.note),
+                    );
+                }
+                if !MODELS.iter().any(|m| m.id == current.as_str()) && !current.is_empty() {
+                    ui.separator();
+                    ui.selectable_value(
+                        &mut self.chat_model,
+                        current.clone(),
+                        format!("{current} (saved)"),
+                    );
+                }
+            });
+        ui.weak("Only models that work well for Markdown edits are listed.");
 
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Model").strong());
-        ui.horizontal(|ui| {
-            if self.chat_models_loading {
-                ui.spinner();
-            }
-            let models = self.chat_models.clone();
-            if models.is_empty() && !self.chat_models_loading {
-                ui.weak("Paste an API key above to load models…");
-            } else {
-                egui::ComboBox::from_id_source("gemini_model")
-                    .selected_text(if self.chat_model.is_empty() {
-                        "Select…"
-                    } else {
-                        &self.chat_model
-                    })
-                    .show_ui(ui, |ui| {
-                        for m in &models {
-                            ui.selectable_value(&mut self.chat_model, m.clone(), m.as_str());
-                        }
-                    });
-            }
-            if ui
-                .button("⟳")
-                .on_hover_text("Reload model list from Google")
-                .clicked()
-            {
-                self.chat_models.clear();
-                self.chat_models_error = None;
-                self.ensure_models_loaded();
-            }
-        });
-        if let Some(err) = self.chat_models_error.clone() {
-            ui.weak(format!("{err} Using snapshot list."));
-        }
         self.show_rate_limits(ui);
     }
 
@@ -871,19 +807,17 @@ impl NotepadApp {
         self.poll_chat();
         self.poll_recording();
         self.poll_transcription();
-        self.ensure_models_loaded();
-        self.poll_models();
-        if self.chat_busy
-            || self.chat_models_loading
-            || self.transcribing
-            || self.recording.is_some()
-        {
+        if self.chat_busy || self.transcribing || self.recording.is_some() {
             ctx.request_repaint();
         }
 
         let hovering_audio = hovered_audio_name(ctx);
         let has_key = !self.api_key().is_empty();
         let settings_open = !has_key;
+        let send_shortcut = ctx.format_shortcut(&egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Enter,
+        ));
 
         egui::SidePanel::left("ai_chat_panel")
             .resizable(true)
@@ -894,9 +828,35 @@ impl NotepadApp {
             .max_width((ctx.available_rect().width() - MIN_EDITOR_WIDTH).max(MIN_SIDE_PANEL_WIDTH))
             .frame(panel_frame(ctx))
             .show(ctx, |ui| {
-                if panel_header(ui, "Assistant", "Close").clicked() {
-                    self.tabs.assistant = false;
-                }
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Assistant").strong().size(14.0));
+                    let status_color = if has_key {
+                        ACCENT
+                    } else {
+                        ui.visuals().warn_fg_color
+                    };
+                    let status_text = if has_key { "Gemini" } else { "Setup needed" };
+                    egui::Frame::none()
+                        .fill(SURFACE)
+                        .rounding(10.0)
+                        .inner_margin(egui::Margin::symmetric(7.0, 2.0))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 5.0;
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(6.0, 6.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(rect.center(), 3.0, status_color);
+                                ui.label(egui::RichText::new(status_text).small().weak());
+                            });
+                        });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if header_close_button(ui, "Close").clicked() {
+                            self.tabs.assistant = false;
+                        }
+                    });
+                });
                 ui.separator();
                 // Roomier spacing, and everything below scrolls so short
                 // windows clip nothing instead of hiding content.
@@ -914,7 +874,19 @@ impl NotepadApp {
                         .show(ui, |ui| self.show_assistant_settings(ui));
 
                         ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Instruction").strong());
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Instruction").strong());
+                            if !self.chat_input.is_empty() {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui.small_button("Clear").clicked() {
+                                            self.chat_input.clear();
+                                        }
+                                    },
+                                );
+                            }
+                        });
 
                         if let Some(name) = &hovering_audio {
                             egui::Frame::none()
@@ -957,14 +929,17 @@ impl NotepadApp {
 
                         ui.horizontal_wrapped(|ui| {
                             let send = egui::Button::new(
-                                egui::RichText::new(format!("{} Send", icons::PAPER_PLANE_TILT))
-                                    .strong()
-                                    .color(ACCENT_TEXT),
+                                egui::RichText::new(format!(
+                                    "{} Send  ({send_shortcut})",
+                                    icons::PAPER_PLANE_TILT
+                                ))
+                                .strong()
+                                .color(ACCENT_TEXT),
                             )
                             .fill(ACCENT);
                             if ui
                                 .add_enabled(can_send, send)
-                                .on_hover_text("Send the instruction to Gemini (Ctrl+Enter)")
+                                .on_hover_text("Send the instruction to Gemini")
                                 .clicked()
                             {
                                 self.send_chat();
@@ -1049,52 +1024,81 @@ impl NotepadApp {
 
                         ui.separator();
                         ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Suggestion").strong());
-                        egui::ScrollArea::vertical()
-                            .max_height(220.0)
-                            .auto_shrink([false; 2])
+                        egui::Frame::none()
+                            .fill(BG_ELEVATED)
+                            .rounding(8.0)
+                            .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                            .inner_margin(egui::Margin::same(10.0))
                             .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Suggestion").strong());
+                                    if !self.chat_response.is_empty() {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.weak(
+                                                    egui::RichText::new(model_label(
+                                                        &self.chat_model,
+                                                    ))
+                                                    .small(),
+                                                );
+                                            },
+                                        );
+                                    }
+                                });
+                                ui.add_space(6.0);
                                 if self.chat_response.is_empty() {
-                                    ui.weak("No suggestion yet.");
+                                    ui.vertical_centered(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(icons::SPARKLE)
+                                                .size(22.0)
+                                                .color(ui.visuals().weak_text_color()),
+                                        );
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            egui::RichText::new(
+                                                "Gemini's suggestion will appear here.",
+                                            )
+                                            .weak()
+                                            .small(),
+                                        );
+                                    });
+                                    ui.add_space(4.0);
                                 } else {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.chat_response)
-                                            .desired_rows(8)
-                                            .desired_width(f32::INFINITY)
-                                            .code_editor(),
-                                    );
+                                    egui::ScrollArea::vertical()
+                                        .max_height(220.0)
+                                        .auto_shrink([false; 2])
+                                        .show(ui, |ui| {
+                                            ui.add(
+                                                egui::TextEdit::multiline(&mut self.chat_response)
+                                                    .desired_rows(8)
+                                                    .desired_width(f32::INFINITY)
+                                                    .frame(false)
+                                                    .code_editor(),
+                                            );
+                                        });
                                 }
                             });
 
                         // Wrapped so the buttons flow instead of forcing
                         // the panel wider at small sizes.
-                        ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add_enabled(
-                                    !self.chat_response.is_empty(),
-                                    egui::Button::new("Insert at cursor"),
-                                )
-                                .clicked()
-                            {
-                                let snippet = self.chat_response.clone();
-                                insert_at_cursor(self, ctx, &snippet);
-                                self.note_content_changed();
-                            }
-                            if ui
-                                .add_enabled(
-                                    !self.chat_response.is_empty(),
-                                    egui::Button::new("Replace document"),
-                                )
-                                .clicked()
-                            {
-                                self.content = self.chat_response.clone();
-                                self.note_content_changed();
-                            }
-                            if ui.button("Clear").clicked() {
-                                self.chat_response.clear();
-                                self.chat_error = None;
-                            }
-                        });
+                        if !self.chat_response.is_empty() {
+                            ui.horizontal_wrapped(|ui| {
+                                if ui.button("Insert at cursor").clicked() {
+                                    let snippet = self.chat_response.clone();
+                                    insert_at_cursor(self, ctx, &snippet);
+                                    self.note_content_changed();
+                                }
+                                if ui.button("Replace document").clicked() {
+                                    self.content = self.chat_response.clone();
+                                    self.note_content_changed();
+                                }
+                                if ui.button("Clear").clicked() {
+                                    self.chat_response.clear();
+                                    self.chat_error = None;
+                                }
+                            });
+                        }
                     });
             });
 
@@ -1152,10 +1156,24 @@ mod tests {
     }
 
     #[test]
-    fn fallback_list_only_contains_usable_models() {
-        let models = fallback_models();
-        assert!(models.contains(&"gemini-2.5-flash".to_string()));
-        assert!(!models.contains(&"gemini-2.0-flash".to_string()));
+    fn curated_models_are_unique_and_usable() {
+        assert!(!MODELS.is_empty());
+        assert!(MODELS.iter().any(|m| m.id == default_model()));
+        let mut ids: Vec<_> = MODELS.iter().map(|m| m.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), MODELS.len());
+        for model in MODELS {
+            assert!(!model.label.is_empty());
+            assert!(!model.note.is_empty());
+            assert!(find_limits(model.id).is_some());
+        }
+    }
+
+    #[test]
+    fn model_labels_are_friendly() {
+        assert!(model_label("gemini-2.5-flash").contains("Recommended"));
+        assert_eq!(model_label("custom-model"), "custom-model");
     }
 
     #[test]

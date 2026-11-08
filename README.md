@@ -107,7 +107,7 @@ The assistant needs a Gemini API key from
 [Google AI Studio](https://aistudio.google.com/api-keys).
 
 1. Open the **Assistant** tab and expand **Settings**.
-2. Paste the API key and choose a model, then save.
+2. Paste the API key and choose from a few curated Gemini models, then save.
 3. Type an instruction, or use **Record** / drop an audio file. The transcription
    appears in the instruction box; review it and press **Send**.
 

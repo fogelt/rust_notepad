@@ -1,5 +1,5 @@
 use crate::app::NotepadApp;
-use crate::app::theme::ACCENT_TEXT;
+use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT, SURFACE};
 use eframe::egui;
 use egui_phosphor::regular as icons;
 use rfd::FileDialog;
@@ -12,25 +12,42 @@ const FILE_FILTERS: [(&str, &[&str]); 3] = [
     ("All files", &["*"]),
 ];
 
-/// Header tab with a min-width so the title always fits; click toggles a panel.
-/// Same 24px box and Button text metrics as the File button so all
-/// labels sit on one line.
+/// Segmented view tab: selected tabs get the accent fill, the rest stay
+/// transparent inside the shared pill container and light up on hover.
 fn view_tab(ui: &mut egui::Ui, selected: &mut bool, label: &str, hover: &str) {
-    let text = if *selected {
-        egui::RichText::new(label).color(ACCENT_TEXT)
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(92.0, 26.0), egui::Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hovered = response.hovered();
+
+    let fill = if *selected {
+        if hovered { ACCENT_HOVERED } else { ACCENT }
+    } else if hovered {
+        ui.visuals().widgets.hovered.weak_bg_fill
     } else {
-        egui::RichText::new(label)
+        egui::Color32::TRANSPARENT
     };
-    if ui
-        .add_sized(
-            egui::vec2(88.0, 26.0),
-            egui::Button::new(text).selected(*selected).rounding(6.0),
-        )
-        .on_hover_text(hover)
-        .clicked()
-    {
+    ui.painter().rect_filled(rect.shrink(1.0), 6.0, fill);
+
+    let text_color = if *selected {
+        ACCENT_TEXT
+    } else if hovered {
+        egui::Color32::WHITE
+    } else {
+        ui.visuals().text_color()
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::proportional(14.0),
+        text_color,
+    );
+
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, *selected, label));
+    if response.clicked() {
         *selected = !*selected;
     }
+    response.on_hover_text(hover);
 }
 
 fn with_filters(dialog: FileDialog) -> FileDialog {
@@ -205,26 +222,37 @@ impl NotepadApp {
                             },
                         );
                         ui.separator();
-                        // Order mirrors the panel layout: assistant (left),
-                        // editor (center), preview (right).
-                        view_tab(
-                            ui,
-                            &mut self.tabs.assistant,
-                            "Assistant",
-                            "Toggle the Gemini assistant panel",
-                        );
-                        view_tab(
-                            ui,
-                            &mut self.tabs.editor,
-                            "Editor",
-                            "Toggle the editor panel",
-                        );
-                        view_tab(
-                            ui,
-                            &mut self.tabs.preview,
-                            "Preview",
-                            "Toggle the Markdown preview panel (F11 for fullscreen)",
-                        );
+                        // A single segmented container keeps the view tabs
+                        // grouped and lets the active panel carry the accent.
+                        egui::Frame::none()
+                            .fill(SURFACE)
+                            .rounding(9.0)
+                            .inner_margin(egui::Margin::same(2.0))
+                            .show(ui, |ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                ui.horizontal(|ui| {
+                                    // Order mirrors the panel layout: assistant
+                                    // (left), editor (center), preview (right).
+                                    view_tab(
+                                        ui,
+                                        &mut self.tabs.assistant,
+                                        "Assistant",
+                                        "Toggle the Gemini assistant panel",
+                                    );
+                                    view_tab(
+                                        ui,
+                                        &mut self.tabs.editor,
+                                        "Editor",
+                                        "Toggle the editor panel",
+                                    );
+                                    view_tab(
+                                        ui,
+                                        &mut self.tabs.preview,
+                                        "Preview",
+                                        "Toggle the Markdown preview panel (F11 for fullscreen)",
+                                    );
+                                });
+                            });
                     });
                 });
             });

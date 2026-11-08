@@ -1,15 +1,17 @@
 //! Shared UI theme.
 //!
-//! A small, neutral palette is defined once here and applied globally in
-//! [`apply`]. The accent is a desaturated slate (rather than a saturated
-//! purple) so the chrome stays calm and the document remains the focus.
+//! A small, calm palette is defined once here and applied globally in
+//! [`apply`]. The accent is a soft blue so the chrome stays quiet while
+//! interactive elements still stand out.
 
 use eframe::egui;
 
-/// Neutral slate accent used for selected tabs, primary buttons and progress.
-pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(98, 110, 126);
+/// Calm blue accent used for selected tabs, primary buttons and progress.
+pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(74, 120, 173);
+/// Lighter accent for hovered accent-colored controls.
+pub const ACCENT_HOVERED: egui::Color32 = egui::Color32::from_rgb(88, 136, 190);
 /// Readable accent-tinted color for links on the dark background.
-pub const ACCENT_LINK: egui::Color32 = egui::Color32::from_rgb(126, 156, 200);
+pub const ACCENT_LINK: egui::Color32 = egui::Color32::from_rgb(132, 174, 224);
 /// Text drawn on top of [`ACCENT`] fills.
 pub const ACCENT_TEXT: egui::Color32 = egui::Color32::WHITE;
 
@@ -73,6 +75,7 @@ pub fn apply(ctx: &egui::Context) {
     visuals.menu_rounding = egui::Rounding::same(6.0);
     visuals.selection.bg_fill = ACCENT;
     visuals.selection.stroke = egui::Stroke::NONE;
+    visuals.text_cursor = egui::Stroke::new(1.0_f32, ACCENT);
     visuals.error_fg_color = egui::Color32::from_rgb(230, 118, 118);
     visuals.warn_fg_color = egui::Color32::from_rgb(226, 178, 94);
     visuals.striped = true;

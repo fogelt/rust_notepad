@@ -9,10 +9,10 @@ impl NotepadApp {
                 egui::Frame::none()
                     .fill(BG_ELEVATED)
                     .inner_margin(egui::Margin {
-                        left: 10.0,
-                        right: 10.0,
-                        top: 6.0,
-                        bottom: 6.0,
+                        left: 12.0,
+                        right: 12.0,
+                        top: 9.0,
+                        bottom: 7.0,
                     }),
             )
             .show(ctx, |ui| {
