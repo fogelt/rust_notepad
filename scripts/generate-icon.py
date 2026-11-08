@@ -11,12 +11,10 @@ SIZE = 2048  # supersampled; downscaled for the final assets
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
 ACCENT = "#4A78AD"
-TILE = "#232A33"
-TILE_BORDER = "#343D49"
+TILE = "#1C222B"
+TILE_BORDER = "#2C3A4A"
 PAGE = "#F6F1E7"
-PAGE_QUOTE = "#ECE5D8"
 INK = "#2A2C31"
-WHITE = "#FFFFFF"
 
 
 def rounded_box(
@@ -30,48 +28,49 @@ def rounded_box(
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
 
 
+def hash_mark(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    width: int,
+    height: int,
+    thickness: int,
+    color: str,
+) -> None:
+    cx, cy = center
+    for x in (cx - width // 3, cx + width // 3):
+        rounded_box(
+            draw,
+            (x - thickness // 2, cy - height // 2, x + thickness // 2, cy + height // 2),
+            thickness // 2,
+            color,
+        )
+    for y in (cy - height // 3, cy + height // 3):
+        rounded_box(
+            draw,
+            (cx - width // 2, y - thickness // 2, cx + width // 2, y + thickness // 2),
+            thickness // 2,
+            color,
+        )
+
+
 image = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
 draw = ImageDraw.Draw(image)
 
 # App tile.
 rounded_box(draw, (32, 32, SIZE - 32, SIZE - 32), 448, TILE, TILE_BORDER, 12)
 
-# Paper sheet.
-rounded_box(draw, (560, 330, 1480, 1710), 64, PAGE)
-
-# Blue Markdown heading bar with a white # mark.
-rounded_box(draw, (690, 470, 1350, 640), 40, ACCENT)
-for x in (940, 1090):
-    rounded_box(draw, (x - 16, 505, x + 16, 605), 16, WHITE)
-for y in (535, 575):
-    rounded_box(draw, (865, y - 16, 1165, y + 16), 16, WHITE)
-
-# Body lines.
-for box in (
-    (690, 740, 1350, 800),
-    (690, 860, 1350, 920),
-    (690, 980, 1180, 1040),
-):
-    rounded_box(draw, box, 30, INK)
-
-# Quote block.
-rounded_box(draw, (690, 1120, 730, 1330), 20, ACCENT)
-rounded_box(draw, (760, 1100, 1350, 1350), 40, PAGE_QUOTE)
-for box in (
-    (810, 1160, 1300, 1200),
-    (810, 1250, 1160, 1290),
-):
-    rounded_box(draw, box, 20, INK)
-
-# Task row.
-rounded_box(draw, (690, 1450, 800, 1560), 24, ACCENT)
-draw.line(
-    [(720, 1505), (742, 1527), (775, 1480)],
-    fill=WHITE,
-    width=18,
-    joint="curve",
+# Cream page with a blue bookmark ribbon.
+rounded_box(draw, (500, 360, 1548, 1688), 96, PAGE)
+draw.polygon(
+    [(1200, 360), (1440, 360), (1440, 800), (1320, 700), (1200, 800)],
+    fill=ACCENT,
 )
-rounded_box(draw, (830, 1485, 1350, 1525), 20, INK)
+
+# Bold Markdown # mark.
+hash_mark(draw, (940, 1060), 500, 500, 76, ACCENT)
+
+# A single page line anchors the mark.
+rounded_box(draw, (660, 1420, 1388, 1480), 30, INK)
 
 # Downscale for the window / package icon.
 icon = image.resize((512, 512), Image.LANCZOS)
