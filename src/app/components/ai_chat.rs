@@ -149,6 +149,16 @@ fn stream_transcription(
     use std::io::BufRead as _;
 
     let audio = base64::engine::general_purpose::STANDARD.encode(audio_bytes);
+    let mut generation = serde_json::json!({
+        "temperature": 0.0,
+        "maxOutputTokens": 1024
+    });
+    // Transcription needs no reasoning. Turning thinking off makes Gemini
+    // start emitting the transcript immediately (and stream it) instead of
+    // buffering thought tokens first.
+    if model.contains("2.5-flash") {
+        generation["thinkingConfig"] = serde_json::json!({ "thinkingBudget": 0 });
+    }
     let body = serde_json::json!({
         "contents": [{
             "role": "user",
@@ -165,7 +175,7 @@ fn stream_transcription(
                 }
             ]
         }],
-        "generationConfig": { "temperature": 0.0, "maxOutputTokens": 1024 }
+        "generationConfig": generation
     });
 
     let url = format!(
@@ -401,6 +411,7 @@ impl NotepadApp {
     pub fn poll_dictation(&mut self, ctx: &egui::Context) {
         self.poll_recording(ctx);
         self.poll_transcription(ctx);
+        self.reveal_dictation(ctx);
         if self.is_dictating() {
             ctx.request_repaint();
         }
@@ -429,7 +440,14 @@ impl NotepadApp {
             match event {
                 DictationEvent::Delta(text) => self.apply_dictation_delta(ctx, &text),
                 DictationEvent::Finished => {
-                    self.finish_transcription(ctx);
+                    self.transcribe_rx = None;
+                    self.transcribe_cancel = None;
+                    if let Some(stream) = self.dictation_stream.as_mut() {
+                        // Keep revealing the buffered text, then finish.
+                        stream.finished = true;
+                    } else {
+                        self.finish_transcription(ctx);
+                    }
                     break;
                 }
                 DictationEvent::Failed(err) => {
@@ -451,8 +469,8 @@ impl NotepadApp {
         }
     }
 
-    /// Append a streamed chunk to the document, creating the insertion point
-    /// on the first chunk.
+    /// Buffer a streamed chunk. [`Self::reveal_dictation`] feeds it into the
+    /// document a few characters at a time.
     fn apply_dictation_delta(&mut self, ctx: &egui::Context, delta: &str) {
         if delta.is_empty() {
             return;
@@ -460,16 +478,53 @@ impl NotepadApp {
         if self.dictation_stream.is_none() {
             self.begin_dictation_stream(ctx);
         }
-        let Some(stream) = self.dictation_stream.as_mut() else {
-            return;
-        };
-        let at = stream.start_b + stream.inserted.len();
-        self.content.insert_str(at, delta);
-        stream.inserted.push_str(delta);
-        let end = stream.start_b + stream.inserted.len();
-        let cursor = self.content[..end].chars().count();
-        self.refresh_stats();
-        self.store_editor_cursor(ctx, cursor);
+        if let Some(stream) = self.dictation_stream.as_mut() {
+            stream.pending.push_str(delta);
+        }
+    }
+
+    /// Move pending characters into the document each frame. Small deltas are
+    /// shown immediately; large bursts are revealed progressively so text
+    /// never pops in all at once.
+    fn reveal_dictation(&mut self, ctx: &egui::Context) {
+        let mut revealed = false;
+        let mut cursor = 0;
+        let mut done = false;
+
+        if let Some(stream) = self.dictation_stream.as_mut() {
+            let pending = stream.pending.chars().count();
+            if pending > 0 {
+                let take = if pending <= 32 {
+                    pending
+                } else {
+                    (pending / 10).clamp(4, 16)
+                };
+                let split = stream
+                    .pending
+                    .char_indices()
+                    .nth(take)
+                    .map(|(index, _)| index)
+                    .unwrap_or(stream.pending.len());
+                let piece = stream.pending[..split].to_string();
+                stream.pending.drain(..split);
+
+                let at = stream.start_b + stream.inserted.len();
+                self.content.insert_str(at, &piece);
+                stream.inserted.push_str(&piece);
+                let end = stream.start_b + stream.inserted.len();
+                cursor = self.content[..end].chars().count();
+                revealed = true;
+            }
+            done = stream.finished && stream.pending.is_empty();
+        }
+
+        if revealed {
+            self.refresh_stats();
+            self.store_editor_cursor(ctx, cursor);
+        }
+        if done {
+            self.finish_transcription(ctx);
+        }
     }
 
     /// Snapshot the document and remove the selection before the first delta.
@@ -496,7 +551,9 @@ impl NotepadApp {
             original_range: range.map(|range| (range.primary.index, range.secondary.index)),
             start_b,
             inserted: String::new(),
+            pending: String::new(),
             after_needs_space,
+            finished: false,
         });
     }
 

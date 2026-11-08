@@ -25,10 +25,14 @@ pub struct DictationStream {
     pub original_range: Option<(usize, usize)>,
     /// Byte offset where streamed text is appended.
     pub start_b: usize,
-    /// Text streamed so far (without the optional trailing space).
+    /// Text already inserted into the document (without the trailing space).
     pub inserted: String,
+    /// Text received from Gemini that hasn't been revealed yet.
+    pub pending: String,
     /// Whether a separating space must be added after the stream ends.
     pub after_needs_space: bool,
+    /// True once Gemini finished; the pending text still needs revealing.
+    pub finished: bool,
 }
 
 /// Transient overlay message, used for user-friendly Gemini errors.
