@@ -13,6 +13,7 @@ rewrite or extend it.
   (`Esc` leaves it).
 - **Formatting toolbar** for headings, lists, quotes, tables, links, images,
   code blocks, and more.
+- **Settings menu** for editor font, text size, line spacing, and preview size.
 - **Starter templates** in the empty preview: README, meeting notes, blog post,
   changelog, task list, and project brief.
 - **Autosave** once the document has a file name.

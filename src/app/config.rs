@@ -1,4 +1,4 @@
-//! Assistant settings (API key + model) persisted across launches.
+//! App settings (assistant credentials + appearance) persisted across launches.
 //!
 //! The key is stored in plaintext, like most desktop apps store tokens:
 //! readable only by the local user profile, never logged or committed
@@ -7,12 +7,65 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Editor font families offered in Settings.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorFont {
+    #[default]
+    Sans,
+    Monospace,
+}
+
+fn default_editor_font_size() -> f32 {
+    14.5
+}
+
+fn default_editor_line_height() -> f32 {
+    20.0
+}
+
+fn default_preview_font_size() -> f32 {
+    15.5
+}
+
+/// Appearance settings, all optional so older config files keep loading.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiSettings {
+    #[serde(default)]
+    pub editor_font: EditorFont,
+    #[serde(default = "default_editor_font_size")]
+    pub editor_font_size: f32,
+    #[serde(default = "default_editor_line_height")]
+    pub editor_line_height: f32,
+    #[serde(default = "default_preview_font_size")]
+    pub preview_font_size: f32,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            editor_font: EditorFont::Sans,
+            editor_font_size: default_editor_font_size(),
+            editor_line_height: default_editor_line_height(),
+            preview_font_size: default_preview_font_size(),
+        }
+    }
+}
+
+impl UiSettings {
+    pub const EDITOR_SIZE_RANGE: std::ops::RangeInclusive<f32> = 12.0..=24.0;
+    pub const EDITOR_LINE_RANGE: std::ops::RangeInclusive<f32> = 16.0..=30.0;
+    pub const PREVIEW_SIZE_RANGE: std::ops::RangeInclusive<f32> = 13.0..=22.0;
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
-pub struct AssistantConfig {
+pub struct AppConfig {
     #[serde(default)]
     pub api_key: String,
     #[serde(default)]
     pub model: String,
+    #[serde(default)]
+    pub ui: UiSettings,
 }
 
 /// First non-empty value wins: stored setting, then environment variable.
@@ -38,7 +91,7 @@ pub fn config_path() -> PathBuf {
     PathBuf::from(".rust_notepad.json")
 }
 
-pub fn load() -> AssistantConfig {
+pub fn load() -> AppConfig {
     std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -46,7 +99,7 @@ pub fn load() -> AssistantConfig {
 }
 
 /// Write settings; returns the file path on success.
-pub fn save(cfg: &AssistantConfig) -> Result<PathBuf, String> {
+pub fn save(cfg: &AppConfig) -> Result<PathBuf, String> {
     let path = config_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Could not create {parent:?}: {e}"))?;
@@ -63,19 +116,33 @@ mod tests {
 
     #[test]
     fn roundtrips_through_json() {
-        let cfg = AssistantConfig {
+        let cfg = AppConfig {
             api_key: "AIza-test".to_string(),
             model: "gemini-2.5-flash".to_string(),
+            ui: UiSettings {
+                editor_font: EditorFont::Monospace,
+                editor_font_size: 17.0,
+                editor_line_height: 24.0,
+                preview_font_size: 18.0,
+            },
         };
         let json = serde_json::to_string(&cfg).unwrap();
-        assert_eq!(serde_json::from_str::<AssistantConfig>(&json).unwrap(), cfg);
+        assert_eq!(serde_json::from_str::<AppConfig>(&json).unwrap(), cfg);
+    }
+
+    #[test]
+    fn old_config_without_ui_uses_defaults() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"api_key":"AIza-test","model":"gemini-2.5-flash"}"#).unwrap();
+        assert_eq!(cfg.ui, UiSettings::default());
+        assert_eq!(cfg.api_key, "AIza-test");
     }
 
     #[test]
     fn ignores_broken_config() {
         assert_eq!(
-            serde_json::from_str::<AssistantConfig>("{oops").unwrap_or_default(),
-            AssistantConfig::default()
+            serde_json::from_str::<AppConfig>("{oops").unwrap_or_default(),
+            AppConfig::default()
         );
     }
 

@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
+use crate::app::config::UiSettings;
 use crate::app::live::LiveSession;
 
 /// Events streamed from the dictation worker.
@@ -91,6 +92,8 @@ pub struct NotepadApp {
     pub dictation_stream: Option<DictationStream>,
     /// Toast shown above the footer; auto-dismisses.
     pub toast: Option<Toast>,
+    /// Persisted appearance settings (font family, sizes, line spacing).
+    pub ui_settings: UiSettings,
     /// Last seen monitor size / DPI, to detect screen changes.
     pub last_monitor_size: Option<[f32; 2]>,
     pub last_native_ppp: Option<f32>,
@@ -200,6 +203,7 @@ impl Default for NotepadApp {
             transcribe_cancel: None,
             dictation_stream: None,
             toast: None,
+            ui_settings: stored.ui.clone(),
             last_monitor_size: None,
             last_native_ppp: None,
             window_title: None,

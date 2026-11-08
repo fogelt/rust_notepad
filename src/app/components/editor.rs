@@ -1,4 +1,5 @@
 use crate::app::NotepadApp;
+use crate::app::config::{EditorFont, UiSettings};
 use crate::app::templates;
 use crate::app::theme::{
     ACCENT, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
@@ -139,20 +140,24 @@ fn split_dest_title(group: &str) -> (&str, &str) {
 
 /// Typography for the rendered preview: slightly larger, roomier text with
 /// neutral borders around code blocks and a comfortable link color.
-fn preview_style(ui: &egui::Ui) -> egui::Style {
+fn preview_style(ui: &egui::Ui, settings: &UiSettings) -> egui::Style {
     let mut style = (**ui.style()).clone();
+    let body = settings.preview_font_size;
     style
         .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(15.5));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Heading, egui::FontId::proportional(30.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.5));
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(body));
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::proportional(body * 1.94),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Small,
+        egui::FontId::proportional(body * 0.77),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Monospace,
+        egui::FontId::monospace(body * 0.87),
+    );
     style.spacing.item_spacing = egui::vec2(6.0, 7.0);
     style.visuals.hyperlink_color = ACCENT_LINK;
     style.visuals.code_bg_color = BG_CODE;
@@ -286,6 +291,13 @@ impl NotepadApp {
 
     /// The scrollable text area. Read-only while dictation owns the document.
     fn show_editor_text(&mut self, ui: &mut egui::Ui, locked: bool) {
+        let family = match self.ui_settings.editor_font {
+            EditorFont::Sans => egui::FontFamily::Proportional,
+            EditorFont::Monospace => egui::FontFamily::Monospace,
+        };
+        let font_size = self.ui_settings.editor_font_size;
+        let line_height = self.ui_settings.editor_line_height;
+
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
@@ -297,14 +309,15 @@ impl NotepadApp {
                     .frame(false)
                     .interactive(!locked)
                     .desired_width(max_width)
-                    .layouter(&mut |ui, string, wrap_width| {
+                    .layouter(&mut move |ui, string, wrap_width| {
                         let mut layout_job = egui::text::LayoutJob::default();
                         layout_job.append(
                             string,
                             0.0,
                             egui::text::TextFormat {
+                                font_id: egui::FontId::new(font_size, family.clone()),
                                 color: ui.visuals().widgets.noninteractive.text_color(),
-                                line_height: Some(20.0),
+                                line_height: Some(line_height),
                                 ..Default::default()
                             },
                         );
@@ -321,7 +334,7 @@ impl NotepadApp {
     }
 
     fn show_preview_body(&mut self, ui: &mut egui::Ui, full_width: bool) {
-        ui.set_style(preview_style(ui));
+        ui.set_style(preview_style(ui, &self.ui_settings));
 
         // A centered reading column keeps long lines comfortable when the
         // preview fills a wide window; narrow side panels use all their width.

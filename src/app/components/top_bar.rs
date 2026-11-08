@@ -1,4 +1,5 @@
 use crate::app::NotepadApp;
+use crate::app::config::{EditorFont, UiSettings};
 use crate::app::theme::{
     ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
 };
@@ -235,6 +236,77 @@ impl NotepadApp {
                             },
                         );
                         ui.separator();
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(84.0, 30.0),
+                            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                            |ui| {
+                                ui.menu_button("Settings", |ui| {
+                                    ui.set_min_width(250.0);
+
+                                    ui.label(egui::RichText::new("Editor font").strong());
+                                    let mut font = self.ui_settings.editor_font;
+                                    ui.radio_value(&mut font, EditorFont::Sans, "Sans");
+                                    ui.radio_value(&mut font, EditorFont::Monospace, "Monospace");
+                                    if font != self.ui_settings.editor_font {
+                                        self.ui_settings.editor_font = font;
+                                        self.save_ui_settings();
+                                    }
+
+                                    ui.add_space(4.0);
+                                    let size = ui.add(
+                                        egui::Slider::new(
+                                            &mut self.ui_settings.editor_font_size,
+                                            UiSettings::EDITOR_SIZE_RANGE,
+                                        )
+                                        .text("Text size")
+                                        .suffix(" pt")
+                                        .step_by(0.5),
+                                    );
+                                    if size.drag_stopped() || (size.changed() && !size.dragged())
+                                    {
+                                        self.save_ui_settings();
+                                    }
+                                    let line = ui.add(
+                                        egui::Slider::new(
+                                            &mut self.ui_settings.editor_line_height,
+                                            UiSettings::EDITOR_LINE_RANGE,
+                                        )
+                                        .text("Line spacing")
+                                        .suffix(" pt")
+                                        .step_by(1.0),
+                                    );
+                                    if line.drag_stopped() || (line.changed() && !line.dragged())
+                                    {
+                                        self.save_ui_settings();
+                                    }
+
+                                    ui.separator();
+                                    ui.label(egui::RichText::new("Preview").strong());
+                                    let preview = ui.add(
+                                        egui::Slider::new(
+                                            &mut self.ui_settings.preview_font_size,
+                                            UiSettings::PREVIEW_SIZE_RANGE,
+                                        )
+                                        .text("Text size")
+                                        .suffix(" pt")
+                                        .step_by(0.5),
+                                    );
+                                    if preview.drag_stopped()
+                                        || (preview.changed() && !preview.dragged())
+                                    {
+                                        self.save_ui_settings();
+                                    }
+
+                                    ui.separator();
+                                    if ui.button("Reset appearance").clicked() {
+                                        self.ui_settings = UiSettings::default();
+                                        self.save_ui_settings();
+                                    }
+                                    ui.weak("Saved automatically.");
+                                });
+                            },
+                        );
+                        ui.separator();
                         // Center the segmented tabs in the full bar, not just
                         // in the space remaining after the File menu.
                         let consumed = ui.cursor().min.x - start_x;
@@ -316,6 +388,15 @@ impl NotepadApp {
             self.save_file(true);
         } else if action_save {
             self.save_file(false);
+        }
+    }
+
+    /// Persist appearance settings without touching the assistant credentials.
+    fn save_ui_settings(&mut self) {
+        let mut cfg = crate::app::config::load();
+        cfg.ui = self.ui_settings.clone();
+        if let Err(err) = crate::app::config::save(&cfg) {
+            self.status_message = format!("Could not save settings: {err}");
         }
     }
 }

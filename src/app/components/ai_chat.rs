@@ -1044,10 +1044,9 @@ impl NotepadApp {
         }
         ui.horizontal(|ui| {
             if ui.button("Save key & model").clicked() {
-                let cfg = crate::app::config::AssistantConfig {
-                    api_key: self.chat_api_key.trim().to_string(),
-                    model: self.chat_model.trim().to_string(),
-                };
+                let mut cfg = crate::app::config::load();
+                cfg.api_key = self.chat_api_key.trim().to_string();
+                cfg.model = self.chat_model.trim().to_string();
                 match crate::app::config::save(&cfg) {
                     Ok(path) => {
                         self.chat_api_key = cfg.api_key;
