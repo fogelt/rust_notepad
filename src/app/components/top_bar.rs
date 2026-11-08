@@ -305,9 +305,11 @@ impl NotepadApp {
             });
 
         if action_new {
+            self.cancel_dictation(ctx);
             self.new_file();
         }
         if action_open {
+            self.cancel_dictation(ctx);
             self.open_file();
         }
         if action_save_as {

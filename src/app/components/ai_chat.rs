@@ -1,4 +1,5 @@
 use crate::app::NotepadApp;
+use crate::app::models::{DictationEvent, DictationStream};
 use crate::app::theme::{
     ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
     MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, panel_frame, panel_header,
@@ -8,6 +9,8 @@ use egui::text::CCursorRange;
 use egui::text_edit::TextEditState;
 use egui_phosphor::regular as icons;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 /// A small, curated set of models that work well for Markdown editing and
@@ -131,15 +134,20 @@ fn gemini_generate(prompt: &str, api_key: &str, model: &str) -> Result<String, S
     Ok(strip_code_fence(&text))
 }
 
-/// Transcribe a WAV recording with the selected Gemini model. Gemini accepts
-/// audio inline, so the existing assistant key/model can be reused.
-fn gemini_transcribe(
+/// Stream a transcription with the selected Gemini model, forwarding text
+/// deltas to the UI as they arrive. Gemini accepts audio inline, so the
+/// existing assistant key/model can be reused.
+fn stream_transcription(
     audio_bytes: &[u8],
     mime_type: &str,
     api_key: &str,
     model: &str,
-) -> Result<String, String> {
+    tx: &mpsc::Sender<DictationEvent>,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
     use base64::Engine as _;
+    use std::io::BufRead as _;
+
     let audio = base64::engine::general_purpose::STANDARD.encode(audio_bytes);
     let body = serde_json::json!({
         "contents": [{
@@ -159,11 +167,95 @@ fn gemini_transcribe(
         }],
         "generationConfig": { "temperature": 0.0, "maxOutputTokens": 1024 }
     });
-    let json = post_generate(&body, api_key, model)?;
-    response_text(&json)
-        .map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty())
-        .ok_or_else(|| "Gemini returned an empty transcription.".to_string())
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent",
+        model.trim()
+    );
+    let resp = reqwest::blocking::Client::new()
+        .post(&url)
+        .query(&[("key", api_key), ("alt", "sse")])
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let detail = resp.text().unwrap_or_default();
+        let short = detail.chars().take(300).collect::<String>();
+        return Err(format!("Gemini error {status}: {short}"));
+    }
+
+    let reader = std::io::BufReader::new(resp);
+    for line in reader.lines() {
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let line = line.map_err(|e| format!("Could not read the Gemini stream: {e}"))?;
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim();
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+        let json: serde_json::Value = serde_json::from_str(data)
+            .map_err(|e| format!("Bad streaming response from Gemini: {e}"))?;
+        if let Some(message) = json
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(|message| message.as_str())
+        {
+            return Err(message.to_string());
+        }
+        if let Some(text) = response_text(&json) {
+            let _ = tx.send(DictationEvent::Delta(text));
+        }
+    }
+    Ok(())
+}
+
+/// Turn raw Gemini/network errors into something a person can act on.
+fn friendly_gemini_error(raw: &str) -> String {
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("api key")
+        || lower.contains("api_key")
+        || lower.contains("unauthenticated")
+        || lower.contains("permission")
+        || lower.contains("401")
+        || lower.contains("403")
+    {
+        return String::from(
+            "Gemini rejected the API key. Check it in Assistant settings and try again.",
+        );
+    }
+    if lower.contains("429")
+        || lower.contains("quota")
+        || lower.contains("rate limit")
+        || lower.contains("resource_exhausted")
+    {
+        return String::from(
+            "Gemini is rate limiting requests right now. Wait a moment and try again.",
+        );
+    }
+    if lower.contains("404") || lower.contains("not found") || lower.contains("not supported") {
+        return String::from(
+            "That Gemini model isn't available for dictation. Pick another model in Assistant settings.",
+        );
+    }
+    if lower.contains("request failed")
+        || lower.contains("sending request")
+        || lower.contains("connection")
+        || lower.contains("timed out")
+        || lower.contains("dns")
+        || lower.contains("network")
+    {
+        return String::from(
+            "Could not reach Gemini. Check your internet connection and try again.",
+        );
+    }
+    let short = raw.chars().take(220).collect::<String>();
+    format!("Dictation failed: {short}")
 }
 
 /// Join the text parts of the first candidate, skipping any "thought" parts.
@@ -208,10 +300,11 @@ fn post_generate(
         .map_err(|e| format!("Bad response from Gemini: {e}"))
 }
 
-/// Replace the character range between `first` and `second` with dictated
-/// `text`, adding spaces where it would otherwise run into neighbouring words.
-/// Returns the new content and the cursor position (in chars) after the insert.
-fn splice_dictation(content: &str, first: usize, second: usize, text: &str) -> (String, usize) {
+/// Prepare an edit for streamed dictation: replace the selected character
+/// range, add a leading space if it would run into the previous word, and
+/// report where deltas should be inserted. The returned `bool` says whether a
+/// trailing space is needed once the stream finishes.
+fn prepare_dictation(content: &str, first: usize, second: usize) -> (String, usize, bool) {
     let (start_c, end_c) = if first <= second {
         (first, second)
     } else {
@@ -236,21 +329,15 @@ fn splice_dictation(content: &str, first: usize, second: usize, text: &str) -> (
         .is_some_and(|c| c.is_whitespace());
     let after_space = after.chars().next().is_some_and(|c| c.is_whitespace());
 
-    let mut snippet = String::new();
-    if !before.is_empty() && !before_space {
-        snippet.push(' ');
-    }
-    snippet.push_str(text);
-    if !after.is_empty() && !after_space {
-        snippet.push(' ');
-    }
-
-    let cursor = before.chars().count() + snippet.chars().count();
-    let mut updated = String::with_capacity(content.len() + snippet.len());
+    let mut updated = String::with_capacity(content.len() + 1);
     updated.push_str(before);
-    updated.push_str(&snippet);
+    if !before.is_empty() && !before_space {
+        updated.push(' ');
+    }
+    let insert_at = updated.len();
     updated.push_str(after);
-    (updated, cursor)
+    let needs_trailing = !after.is_empty() && !after_space;
+    (updated, insert_at, needs_trailing)
 }
 
 fn insert_at_cursor(app: &mut NotepadApp, ctx: &egui::Context, snippet: &str) {
@@ -312,117 +399,245 @@ impl NotepadApp {
     /// Poll recording and transcription for document dictation. Called once
     /// per frame so it also runs while the Assistant panel is closed.
     pub fn poll_dictation(&mut self, ctx: &egui::Context) {
-        self.poll_recording();
+        self.poll_recording(ctx);
         self.poll_transcription(ctx);
-        if self.recording.is_some() || self.transcribing {
+        if self.is_dictating() {
             ctx.request_repaint();
         }
     }
 
-    /// Poll the microphone thread; when the WAV is ready, transcribe it.
-    fn poll_recording(&mut self) {
+    /// Poll the microphone thread; when the WAV is ready, stream it to Gemini.
+    fn poll_recording(&mut self, ctx: &egui::Context) {
         let finished = self.recording.as_ref().and_then(|session| session.poll());
         let Some(result) = finished else {
             return;
         };
         self.recording = None;
         match result {
-            Ok(wav) => self.start_transcription(wav, "audio/wav"),
+            Ok(wav) => self.start_transcription(ctx, wav, "audio/wav"),
             Err(err) => {
-                self.status_message = format!("Dictation failed: {err}");
+                let message = format!("Microphone error: {err}");
+                self.status_message = message.clone();
+                self.push_toast(message, true);
             }
         }
     }
 
+    /// Drain streamed dictation events. Several deltas can arrive per frame.
     fn poll_transcription(&mut self, ctx: &egui::Context) {
-        let received = match self.transcribe_rx.as_ref().map(|rx| rx.try_recv()) {
-            Some(Ok(result)) => Some(result),
-            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
-                Some(Err("Transcription worker stopped unexpectedly.".to_string()))
-            }
-            // Empty, or no request in flight.
-            _ => None,
-        };
-        let Some(result) = received else {
-            return;
-        };
-        self.transcribe_rx = None;
-        self.transcribing = false;
-        match result {
-            Ok(text) => {
-                let text = text.trim();
-                if !text.is_empty() {
-                    self.insert_dictation(ctx, text);
-                    if self.file_path.is_none() {
-                        self.status_message =
-                            String::from("Dictation inserted — save the file to keep it.");
-                    } else {
-                        self.status_message = String::from("Dictation inserted.");
-                    }
-                } else {
-                    self.status_message = String::from("No speech was detected.");
+        while let Some(event) = self.next_dictation_event() {
+            match event {
+                DictationEvent::Delta(text) => self.apply_dictation_delta(ctx, &text),
+                DictationEvent::Finished => {
+                    self.finish_transcription(ctx);
+                    break;
+                }
+                DictationEvent::Failed(err) => {
+                    self.fail_transcription(ctx, &err);
+                    break;
                 }
             }
-            Err(err) => {
-                self.status_message = format!("Dictation failed: {err}");
-            }
         }
     }
 
-    /// Insert transcribed speech at the editor cursor, replacing any selection
-    /// and keeping sensible spacing next to existing text.
-    fn insert_dictation(&mut self, ctx: &egui::Context, text: &str) {
-        let id = egui::Id::new("editor_text");
-        let mut handled = false;
+    fn next_dictation_event(&mut self) -> Option<DictationEvent> {
+        let rx = self.transcribe_rx.as_ref()?;
+        match rx.try_recv() {
+            Ok(event) => Some(event),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(DictationEvent::Failed(
+                "The transcription worker stopped unexpectedly.".to_string(),
+            )),
+        }
+    }
 
-        if let Some(state) = TextEditState::load(ctx, id)
-            && let Some(range) = state.cursor.char_range()
-        {
-            let (updated, new_c) = splice_dictation(
-                &self.content,
-                range.primary.index,
-                range.secondary.index,
-                text,
-            );
-            self.content = updated;
-            if let Some(mut state) = TextEditState::load(ctx, id) {
-                state
-                    .cursor
-                    .set_char_range(Some(CCursorRange::one(egui::text::CCursor::new(new_c))));
-                state.store(ctx, id);
+    /// Append a streamed chunk to the document, creating the insertion point
+    /// on the first chunk.
+    fn apply_dictation_delta(&mut self, ctx: &egui::Context, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        if self.dictation_stream.is_none() {
+            self.begin_dictation_stream(ctx);
+        }
+        let Some(stream) = self.dictation_stream.as_mut() else {
+            return;
+        };
+        let at = stream.start_b + stream.inserted.len();
+        self.content.insert_str(at, delta);
+        stream.inserted.push_str(delta);
+        let end = stream.start_b + stream.inserted.len();
+        let cursor = self.content[..end].chars().count();
+        self.refresh_stats();
+        self.store_editor_cursor(ctx, cursor);
+    }
+
+    /// Snapshot the document and remove the selection before the first delta.
+    fn begin_dictation_stream(&mut self, ctx: &egui::Context) {
+        let range = TextEditState::load(ctx, egui::Id::new("editor_text"))
+            .and_then(|state| state.cursor.char_range());
+        let original_content = self.content.clone();
+        let (start_c, end_c) = match range {
+            Some(range) => {
+                let (a, b) = (range.primary.index, range.secondary.index);
+                if a <= b { (a, b) } else { (b, a) }
             }
-            handled = true;
+            None => {
+                let end = self.content.chars().count();
+                (end, end)
+            }
+        };
+        let (prepared, start_b, after_needs_space) =
+            prepare_dictation(&self.content, start_c, end_c);
+        self.content = prepared;
+        self.refresh_stats();
+        self.dictation_stream = Some(DictationStream {
+            original_content,
+            original_range: range.map(|range| (range.primary.index, range.secondary.index)),
+            start_b,
+            inserted: String::new(),
+            after_needs_space,
+        });
+    }
+
+    fn finish_transcription(&mut self, ctx: &egui::Context) {
+        self.transcribe_rx = None;
+        self.transcribe_cancel = None;
+        self.transcribing = false;
+
+        let Some(stream) = self.dictation_stream.take() else {
+            self.status_message = String::from("No speech was detected.");
+            self.focus_editor(ctx);
+            return;
+        };
+        if stream.inserted.trim().is_empty() {
+            self.content = stream.original_content;
+            self.restore_editor_range(ctx, stream.original_range);
+            self.refresh_stats();
+            self.status_message = String::from("No speech was detected.");
+            self.focus_editor(ctx);
+            return;
         }
 
-        if !handled {
-            if !self.content.is_empty() && !self.content.ends_with(char::is_whitespace) {
-                self.content.push(' ');
-            }
-            self.content.push_str(text);
+        if stream.after_needs_space {
+            let at = stream.start_b + stream.inserted.len();
+            self.content.insert(at, ' ');
         }
-        ctx.memory_mut(|m| m.request_focus(id));
+        let end = stream.start_b + stream.inserted.len();
+        let cursor = self.content[..end].chars().count();
+        self.store_editor_cursor(ctx, cursor);
         self.note_content_changed();
+        self.status_message = if self.file_path.is_none() {
+            String::from("Dictation inserted — save the file to keep it.")
+        } else {
+            String::from("Dictation inserted.")
+        };
+        self.focus_editor(ctx);
     }
 
-    fn start_transcription(&mut self, audio: Vec<u8>, mime: &'static str) {
+    /// Abort the stream, roll back any partial text, and toast the error.
+    fn fail_transcription(&mut self, ctx: &egui::Context, raw: &str) {
+        self.cancel_recording();
+        self.transcribe_rx = None;
+        self.transcribe_cancel = None;
+        self.transcribing = false;
+
+        if let Some(stream) = self.dictation_stream.take() {
+            self.content = stream.original_content;
+            self.restore_editor_range(ctx, stream.original_range);
+            self.refresh_stats();
+        }
+
+        let message = friendly_gemini_error(raw);
+        self.status_message = message.clone();
+        self.push_toast(message, true);
+        self.focus_editor(ctx);
+    }
+
+    /// Stop the microphone and cancel any stream in flight, rolling back the
+    /// partially streamed text.
+    pub fn cancel_dictation(&mut self, ctx: &egui::Context) {
+        self.cancel_recording();
+        if let Some(cancel) = self.transcribe_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.transcribe_rx = None;
+        self.transcribing = false;
+        if let Some(stream) = self.dictation_stream.take() {
+            self.content = stream.original_content;
+            self.restore_editor_range(ctx, stream.original_range);
+            self.refresh_stats();
+        }
+    }
+
+    fn cancel_recording(&mut self) {
+        if let Some(session) = self.recording.take() {
+            session.request_stop();
+        }
+    }
+
+    fn store_editor_cursor(&self, ctx: &egui::Context, char_index: usize) {
+        let id = egui::Id::new("editor_text");
+        if let Some(mut state) = TextEditState::load(ctx, id) {
+            state
+                .cursor
+                .set_char_range(Some(CCursorRange::one(egui::text::CCursor::new(
+                    char_index,
+                ))));
+            state.store(ctx, id);
+        }
+    }
+
+    fn focus_editor(&self, ctx: &egui::Context) {
+        ctx.memory_mut(|m| m.request_focus(egui::Id::new("editor_text")));
+    }
+
+    fn restore_editor_range(&self, ctx: &egui::Context, range: Option<(usize, usize)>) {
+        let id = egui::Id::new("editor_text");
+        if let Some(mut state) = TextEditState::load(ctx, id) {
+            let range = range.map(|(a, b)| {
+                CCursorRange::two(egui::text::CCursor::new(a), egui::text::CCursor::new(b))
+            });
+            state.cursor.set_char_range(range);
+            state.store(ctx, id);
+        }
+    }
+
+    fn start_transcription(&mut self, ctx: &egui::Context, audio: Vec<u8>, mime: &'static str) {
+        self.cancel_dictation(ctx);
+
         let api_key = self.api_key();
         if api_key.is_empty() {
-            self.status_message =
-                String::from("Dictation needs a Gemini API key — add one in Assistant settings.");
+            let message = String::from("Add a Gemini API key in Assistant settings to dictate.");
+            self.status_message = message.clone();
+            self.push_toast(message, true);
             return;
         }
         let model = self.chat_model.trim().to_string();
         if model.is_empty() {
-            self.status_message =
-                String::from("Dictation needs a model — pick one in Assistant settings.");
+            let message = String::from("Pick a Gemini model in Assistant settings to dictate.");
+            self.status_message = message.clone();
+            self.push_toast(message, true);
             return;
         }
+
         let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
         self.transcribe_rx = Some(rx);
+        self.transcribe_cancel = Some(Arc::clone(&cancel));
         self.transcribing = true;
+        self.dictation_stream = None;
         self.status_message = String::from("Transcribing dictation with Gemini...");
         std::thread::spawn(move || {
-            let _ = tx.send(gemini_transcribe(&audio, mime, &api_key, &model));
+            let result = stream_transcription(&audio, mime, &api_key, &model, &tx, &cancel);
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            let event = match result {
+                Ok(()) => DictationEvent::Finished,
+                Err(err) => DictationEvent::Failed(err),
+            };
+            let _ = tx.send(event);
         });
     }
 
@@ -445,19 +660,22 @@ impl NotepadApp {
             .unwrap_or_else(|| path.display().to_string());
 
         if self.api_key().is_empty() {
-            self.status_message = String::from(
-                "Dropped audio needs a Gemini API key — add one in Assistant settings.",
-            );
+            let message =
+                String::from("Add a Gemini API key in Assistant settings to transcribe audio.");
+            self.status_message = message.clone();
+            self.push_toast(message, true);
             return;
         }
 
         match read_audio_file(&path) {
             Ok(bytes) => {
                 self.status_message = format!("Transcribing {name}…");
-                self.start_transcription(bytes, mime);
+                self.start_transcription(ctx, bytes, mime);
             }
             Err(err) => {
-                self.status_message = format!("Could not use {name}: {err}");
+                let message = format!("Could not use {name}: {err}");
+                self.status_message = message.clone();
+                self.push_toast(message, true);
             }
         }
     }
@@ -777,13 +995,20 @@ impl NotepadApp {
                                     );
                                 });
                             ui.add_space(6.0);
+                            let dictating = self.is_dictating();
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button("Insert at cursor").clicked() {
+                                if ui
+                                    .add_enabled(!dictating, egui::Button::new("Insert at cursor"))
+                                    .clicked()
+                                {
                                     let snippet = self.chat_response.clone();
                                     insert_at_cursor(self, ctx, &snippet);
                                     self.note_content_changed();
                                 }
-                                if ui.button("Replace document").clicked() {
+                                if ui
+                                    .add_enabled(!dictating, egui::Button::new("Replace document"))
+                                    .clicked()
+                                {
                                     self.content = self.chat_response.clone();
                                     self.note_content_changed();
                                 }
@@ -804,26 +1029,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dictation_adds_spacing_between_words() {
-        let (text, cursor) = splice_dictation("hello world", 5, 5, "there");
-        assert_eq!(text, "hello there world");
-        assert_eq!(cursor, "hello there".chars().count());
+    fn dictation_inserts_with_spacing_between_words() {
+        let (text, at, trailing) = prepare_dictation("hello world", 5, 5);
+        assert_eq!(text, "hello  world");
+        assert_eq!(at, 6);
+        assert!(!trailing);
     }
 
     #[test]
     fn dictation_replaces_the_selection() {
-        let (text, cursor) = splice_dictation("keep this and that", 5, 9, "only");
-        assert_eq!(text, "keep only and that");
-        assert_eq!(cursor, "keep only".chars().count());
+        let (text, at, trailing) = prepare_dictation("keep this and that", 5, 9);
+        assert_eq!(text, "keep  and that");
+        assert_eq!(at, 5);
+        assert!(!trailing);
+        let mut streamed = text;
+        streamed.insert_str(at, "only");
+        assert_eq!(streamed, "keep only and that");
     }
 
     #[test]
     fn dictation_handles_reversed_and_empty_selection() {
-        let (text, _) = splice_dictation("ab", 2, 0, "X");
-        assert_eq!(text, "X");
-        let (text, cursor) = splice_dictation("", 0, 0, "first");
-        assert_eq!(text, "first");
-        assert_eq!(cursor, 5);
+        let (text, at, trailing) = prepare_dictation("ab", 2, 0);
+        assert_eq!(text, "");
+        assert_eq!(at, 0);
+        assert!(!trailing);
+        let (text, at, trailing) = prepare_dictation("", 0, 0);
+        assert_eq!(text, "");
+        assert_eq!(at, 0);
+        assert!(!trailing);
+    }
+
+    #[test]
+    fn dictation_reserves_a_trailing_space() {
+        let (_, at, trailing) = prepare_dictation("ab", 1, 1);
+        assert_eq!(at, 2);
+        assert!(trailing);
+    }
+
+    #[test]
+    fn friendly_errors_point_at_the_fix() {
+        assert!(friendly_gemini_error("403 API key not valid").contains("API key"));
+        assert!(friendly_gemini_error("429 RESOURCE_EXHAUSTED").contains("rate limiting"));
+        assert!(friendly_gemini_error("Request failed: dns error").contains("internet"));
+        assert!(friendly_gemini_error("weird thing").contains("weird thing"));
     }
 
     #[test]

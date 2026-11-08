@@ -111,9 +111,11 @@ The assistant and dictation need a Gemini API key from
 3. Type an instruction and press **Send** to rewrite or extend the document.
 
 **Dictation** is separate from the assistant: press the microphone in the editor
-toolbar, speak, and press **Stop**. The transcription is inserted at the editor
-cursor (replacing any selection). You can also drop an audio file anywhere on the
-window — its transcription is inserted into the document the same way.
+toolbar, speak, and press **Stop**. The editor locks while Gemini streams the
+transcription into the document at the cursor, replacing any selection. You can
+also drop an audio file anywhere on the window — its transcription is streamed
+into the document the same way. If Gemini rejects the request, the partial text
+is rolled back and a toast explains what to fix.
 
 `Ctrl/Cmd+Enter` sends from the instruction box. Recordings are capped at
 60 seconds and dropped audio files at 14 MB; supported formats include `wav`,

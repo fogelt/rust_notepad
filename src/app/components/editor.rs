@@ -1,7 +1,7 @@
 use crate::app::NotepadApp;
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT, ACCENT_LINK, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
+    ACCENT, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
     PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, panel_frame, panel_header,
 };
 use eframe::egui;
@@ -243,38 +243,77 @@ impl NotepadApp {
             visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
             visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    let max_width = ui.available_width();
-
-                    let response = egui::TextEdit::multiline(&mut self.content)
-                        .id(egui::Id::new("editor_text"))
-                        .hint_text("Write text here...")
-                        .frame(false)
-                        .desired_width(max_width)
-                        .layouter(&mut |ui, string, wrap_width| {
-                            let mut layout_job = egui::text::LayoutJob::default();
-                            layout_job.append(
-                                string,
-                                0.0,
-                                egui::text::TextFormat {
-                                    color: ui.visuals().widgets.noninteractive.text_color(),
-                                    line_height: Some(20.0),
-                                    ..Default::default()
+            if self.is_dictating() {
+                egui::Frame::none()
+                    .stroke(egui::Stroke::new(1.5_f32, ACCENT))
+                    .rounding(8.0)
+                    .inner_margin(egui::Margin::same(8.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    egui::Frame::none()
+                                        .fill(ACCENT)
+                                        .rounding(4.0)
+                                        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{} Dictating",
+                                                    icons::MICROPHONE
+                                                ))
+                                                .size(11.0)
+                                                .strong()
+                                                .color(ACCENT_TEXT),
+                                            );
+                                        });
                                 },
                             );
-                            layout_job.wrap.max_width = wrap_width;
-                            ui.fonts(|f| f.layout_job(layout_job))
-                        })
-                        .min_size(egui::vec2(max_width, ui.available_height()))
-                        .show(ui);
-
-                    if response.response.changed() {
-                        self.note_content_changed();
-                    }
-                });
+                        });
+                        ui.add_space(4.0);
+                        self.show_editor_text(ui, true);
+                    });
+            } else {
+                self.show_editor_text(ui, false);
+            }
         });
+    }
+
+    /// The scrollable text area. Read-only while dictation owns the document.
+    fn show_editor_text(&mut self, ui: &mut egui::Ui, locked: bool) {
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                let max_width = ui.available_width();
+
+                let response = egui::TextEdit::multiline(&mut self.content)
+                    .id(egui::Id::new("editor_text"))
+                    .hint_text("Write text here...")
+                    .frame(false)
+                    .interactive(!locked)
+                    .desired_width(max_width)
+                    .layouter(&mut |ui, string, wrap_width| {
+                        let mut layout_job = egui::text::LayoutJob::default();
+                        layout_job.append(
+                            string,
+                            0.0,
+                            egui::text::TextFormat {
+                                color: ui.visuals().widgets.noninteractive.text_color(),
+                                line_height: Some(20.0),
+                                ..Default::default()
+                            },
+                        );
+                        layout_job.wrap.max_width = wrap_width;
+                        ui.fonts(|f| f.layout_job(layout_job))
+                    })
+                    .min_size(egui::vec2(max_width, ui.available_height()))
+                    .show(ui);
+
+                if response.response.changed() {
+                    self.note_content_changed();
+                }
+            });
     }
 
     fn show_preview_body(&mut self, ui: &mut egui::Ui, full_width: bool) {

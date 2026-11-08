@@ -1,9 +1,42 @@
 use eframe::egui;
 use egui_commonmark::CommonMarkCache;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
+use std::time::Instant;
 
 use crate::app::audio::RecordingSession;
+
+/// Events streamed from the dictation worker.
+pub enum DictationEvent {
+    /// A new piece of transcription text to append to the document.
+    Delta(String),
+    /// Gemini finished the transcription.
+    Finished,
+    /// The request failed; the payload is the raw error.
+    Failed(String),
+}
+
+/// An in-progress streamed dictation. Kept so the document can be updated as
+/// text arrives and restored exactly if the request fails.
+pub struct DictationStream {
+    pub original_content: String,
+    pub original_range: Option<(usize, usize)>,
+    /// Byte offset where streamed text is appended.
+    pub start_b: usize,
+    /// Text streamed so far (without the optional trailing space).
+    pub inserted: String,
+    /// Whether a separating space must be added after the stream ends.
+    pub after_needs_space: bool,
+}
+
+/// Transient overlay message, used for user-friendly Gemini errors.
+pub struct Toast {
+    pub message: String,
+    pub is_error: bool,
+    pub created: Instant,
+}
 
 /// Visibility toggles for the three main panels, driven by the header tabs.
 /// Adding a new panel: add a field here, a tab in `show_top_bar`, and gate
@@ -43,7 +76,13 @@ pub struct NotepadApp {
     pub recording: Option<RecordingSession>,
     /// True while a transcription request is in flight.
     pub transcribing: bool,
-    pub transcribe_rx: Option<Receiver<Result<String, String>>>,
+    pub transcribe_rx: Option<Receiver<DictationEvent>>,
+    /// Set to ask the streaming worker to stop early.
+    pub transcribe_cancel: Option<Arc<AtomicBool>>,
+    /// Document edit being filled in by the stream.
+    pub dictation_stream: Option<DictationStream>,
+    /// Toast shown above the footer; auto-dismisses.
+    pub toast: Option<Toast>,
     /// Last seen monitor size / DPI, to detect screen changes.
     pub last_monitor_size: Option<[f32; 2]>,
     pub last_native_ppp: Option<f32>,
@@ -57,6 +96,11 @@ pub struct NotepadApp {
 }
 
 impl NotepadApp {
+    /// True while the microphone is recording or Gemini is transcribing.
+    pub fn is_dictating(&self) -> bool {
+        self.recording.is_some() || self.transcribing
+    }
+
     /// Recompute the cached footer statistics after `content` changes.
     pub fn refresh_stats(&mut self) {
         self.word_count = self.content.split_whitespace().count();
@@ -142,6 +186,9 @@ impl Default for NotepadApp {
             recording: None,
             transcribing: false,
             transcribe_rx: None,
+            transcribe_cancel: None,
+            dictation_stream: None,
+            toast: None,
             last_monitor_size: None,
             last_native_ppp: None,
             window_title: None,

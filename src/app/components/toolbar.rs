@@ -1,6 +1,6 @@
 use crate::app::NotepadApp;
 use crate::app::audio;
-use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT};
+use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BORDER, SURFACE};
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -414,6 +414,7 @@ impl NotepadApp {
     pub fn show_markdown_toolbar(&mut self, ctx: &egui::Context) {
         // Dispatch id set by the clicked button below.
         let mut action: Option<u8> = None;
+        let dictating = self.is_dictating();
 
         egui::TopBottomPanel::top("markdown_toolbar")
             .frame(
@@ -503,7 +504,16 @@ impl NotepadApp {
                                     egui::vec2(96.0, 28.0),
                                     egui::Layout::left_to_right(egui::Align::Center),
                                     |ui| {
-                                        ui.label(egui::RichText::new("Transcribing…").small());
+                                        egui::Frame::none()
+                                            .fill(SURFACE)
+                                            .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                                            .rounding(6.0)
+                                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    egui::RichText::new("Transcribing…").small(),
+                                                );
+                                            });
                                     },
                                 );
                             },
@@ -512,7 +522,7 @@ impl NotepadApp {
                         let secs = session.elapsed().as_secs();
                         let stop = ui
                             .allocate_ui_with_layout(
-                                egui::vec2(98.0, 28.0),
+                                egui::vec2(106.0, 28.0),
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
                                     let stop = dictation_button(
@@ -524,18 +534,25 @@ impl NotepadApp {
                                     .clicked();
                                     ui.add_space(10.0);
                                     ui.allocate_ui_with_layout(
-                                        egui::vec2(56.0, 28.0),
+                                        egui::vec2(64.0, 28.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
-                                            ui.colored_label(
-                                                egui::Color32::from_rgb(232, 112, 112),
-                                                egui::RichText::new(format!(
-                                                    "{:02}:{:02}",
-                                                    secs / 60,
-                                                    secs % 60
-                                                ))
-                                                .strong(),
-                                            );
+                                            egui::Frame::none()
+                                                .fill(SURFACE)
+                                                .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                                                .rounding(6.0)
+                                                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                                                .show(ui, |ui| {
+                                                    ui.colored_label(
+                                                        egui::Color32::from_rgb(232, 112, 112),
+                                                        egui::RichText::new(format!(
+                                                            "{:02}:{:02}",
+                                                            secs / 60,
+                                                            secs % 60
+                                                        ))
+                                                        .strong(),
+                                                    );
+                                                });
                                         },
                                     );
                                     stop
@@ -568,6 +585,7 @@ impl NotepadApp {
                             )
                             .inner;
                         if start {
+                            self.cancel_dictation(ctx);
                             self.recording = Some(audio::start());
                             self.status_message =
                                 String::from("Listening… click to stop when finished.");
@@ -576,6 +594,10 @@ impl NotepadApp {
                 });
             });
 
+        if dictating {
+            // Formatting would move the streamed insertion point.
+            return;
+        }
         match action {
             Some(0) => self.wrap_selection(ctx, "**", "**", "bold text"),
             Some(1) => self.wrap_selection(ctx, "*", "*", "italic text"),

@@ -128,5 +128,7 @@ impl eframe::App for NotepadApp {
         // (on top of everything) and spans the width between them.
         self.show_bottom_bar(ctx);
         self.show_editor(ctx);
+        // Toasts live on the foreground layer, above every panel.
+        self.show_toast(ctx);
     }
 }
