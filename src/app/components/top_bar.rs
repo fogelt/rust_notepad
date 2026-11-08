@@ -1,5 +1,7 @@
 use crate::app::NotepadApp;
-use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT, SURFACE};
+use crate::app::theme::{
+    ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
+};
 use eframe::egui;
 use egui_phosphor::regular as icons;
 use rfd::FileDialog;
@@ -21,7 +23,7 @@ fn view_tab(
     label: &str,
     hover: &str,
     rounding: egui::Rounding,
-) {
+) -> egui::Rect {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(92.0, 26.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
@@ -29,9 +31,9 @@ fn view_tab(
     let fill = if *selected {
         if hovered { ACCENT_HOVERED } else { ACCENT }
     } else if hovered {
-        ui.visuals().widgets.hovered.weak_bg_fill
+        SURFACE_ACTIVE
     } else {
-        egui::Color32::TRANSPARENT
+        SURFACE_HOVERED
     };
     ui.painter().rect_filled(rect, rounding, fill);
 
@@ -55,6 +57,7 @@ fn view_tab(
         *selected = !*selected;
     }
     response.on_hover_text(hover);
+    rect
 }
 
 fn with_filters(dialog: FileDialog) -> FileDialog {
@@ -248,37 +251,53 @@ impl NotepadApp {
                                 ui.horizontal(|ui| {
                                     // Order mirrors the panel layout: assistant
                                     // (left), editor (center), preview (right).
-                                    view_tab(
-                                        ui,
-                                        &mut self.tabs.assistant,
-                                        "Assistant",
-                                        "Toggle the Gemini assistant panel",
-                                        egui::Rounding {
-                                            nw: 7.0,
-                                            sw: 7.0,
-                                            ne: 0.0,
-                                            se: 0.0,
-                                        },
-                                    );
-                                    view_tab(
-                                        ui,
-                                        &mut self.tabs.editor,
-                                        "Editor",
-                                        "Toggle the editor panel",
-                                        egui::Rounding::ZERO,
-                                    );
-                                    view_tab(
-                                        ui,
-                                        &mut self.tabs.preview,
-                                        "Preview",
-                                        "Toggle the Markdown preview panel (F11 for fullscreen)",
-                                        egui::Rounding {
-                                            nw: 0.0,
-                                            sw: 0.0,
-                                            ne: 7.0,
-                                            se: 7.0,
-                                        },
-                                    );
+                                    let tab_rects = [
+                                        view_tab(
+                                            ui,
+                                            &mut self.tabs.assistant,
+                                            "Assistant",
+                                            "Toggle the Gemini assistant panel",
+                                            egui::Rounding {
+                                                nw: 7.0,
+                                                sw: 7.0,
+                                                ne: 0.0,
+                                                se: 0.0,
+                                            },
+                                        ),
+                                        view_tab(
+                                            ui,
+                                            &mut self.tabs.editor,
+                                            "Editor",
+                                            "Toggle the editor panel",
+                                            egui::Rounding::ZERO,
+                                        ),
+                                        view_tab(
+                                            ui,
+                                            &mut self.tabs.preview,
+                                            "Preview",
+                                            "Toggle the Markdown preview panel (F11 for fullscreen)",
+                                            egui::Rounding {
+                                                nw: 0.0,
+                                                sw: 0.0,
+                                                ne: 7.0,
+                                                se: 7.0,
+                                            },
+                                        ),
+                                    ];
+
+                                    // Hairlines between neighbouring tabs,
+                                    // drawn last so they also sit above the
+                                    // accent fill of selected tabs.
+                                    for rect in tab_rects.iter().skip(1) {
+                                        ui.painter().vline(
+                                            rect.left(),
+                                            egui::Rangef::new(
+                                                rect.top() + 6.0,
+                                                rect.bottom() - 6.0,
+                                            ),
+                                            egui::Stroke::new(1.0_f32, BG_ELEVATED),
+                                        );
+                                    }
                                 });
                             });
                     });
