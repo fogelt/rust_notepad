@@ -120,6 +120,9 @@ The key and model are stored locally in
 `%APPDATA%\rust_notepad\config.json` on Windows and
 `~/.config/rust_notepad/config.json` elsewhere.
 
+The built-in free-tier limits are a static snapshot, not live usage; open
+AI Studio for current limits. The request counter only counts this app session.
+
 ## Development
 
 Requires a recent stable Rust toolchain (1.87 or newer).

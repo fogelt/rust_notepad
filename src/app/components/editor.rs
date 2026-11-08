@@ -1,7 +1,7 @@
 use crate::app::NotepadApp;
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT_LINK, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
+    ACCENT, ACCENT_LINK, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
     PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, panel_frame, panel_header,
 };
 use eframe::egui;
@@ -217,7 +217,6 @@ impl NotepadApp {
             visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
             visuals.widgets.open.bg_stroke = egui::Stroke::NONE;
             visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-            visuals.selection.stroke = egui::Stroke::NONE;
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
@@ -289,8 +288,8 @@ impl NotepadApp {
                         ui.add_space(16.0);
                         ui.label(
                             egui::RichText::new("Or start from a template")
-                                .weak()
-                                .small(),
+                                .small()
+                                .color(ACCENT_LINK),
                         );
                         ui.add_space(5.0);
 
@@ -311,19 +310,35 @@ impl NotepadApp {
                                 egui::Grid::new("template_grid")
                                     .num_columns(columns)
                                     .spacing([gap, 6.0])
+                                    .striped(false)
                                     .show(ui, |ui| {
                                         for (index, template) in
                                             templates::TEMPLATES.iter().enumerate()
                                         {
-                                            let button = egui::Button::new(
-                                                egui::RichText::new(format!(
-                                                    "{} {}",
-                                                    template.icon, template.name
-                                                ))
-                                                .size(13.0),
+                                            let mut label = egui::text::LayoutJob::default();
+                                            label.append(
+                                                &format!("{}  ", template.icon),
+                                                0.0,
+                                                egui::text::TextFormat {
+                                                    font_id: egui::FontId::proportional(13.0),
+                                                    color: ACCENT,
+                                                    ..Default::default()
+                                                },
+                                            );
+                                            label.append(
+                                                template.name,
+                                                0.0,
+                                                egui::text::TextFormat {
+                                                    font_id: egui::FontId::proportional(13.0),
+                                                    color: ui.visuals().text_color(),
+                                                    ..Default::default()
+                                                },
                                             );
                                             if ui
-                                                .add_sized([button_w, 28.0], button)
+                                                .add_sized(
+                                                    [button_w, 28.0],
+                                                    egui::Button::new(label),
+                                                )
                                                 .on_hover_text(template.description)
                                                 .clicked()
                                             {

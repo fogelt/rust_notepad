@@ -2,7 +2,7 @@ use crate::app::NotepadApp;
 use crate::app::audio;
 use crate::app::theme::{
     ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
-    MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, SURFACE, header_close_button, panel_frame,
+    MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, panel_frame, panel_header,
 };
 use eframe::egui;
 use egui::text::CCursorRange;
@@ -638,12 +638,17 @@ impl NotepadApp {
     }
 
     fn show_rate_limits(&self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Rate limits")
+        egui::CollapsingHeader::new("Free-tier limits (snapshot)")
             .default_open(false)
             .show(ui, |ui| {
+                ui.weak(
+                    "Static snapshot from Oct 11 2026 — not live. Google does not \
+                     expose per-key usage; open AI Studio for current limits.",
+                );
+                ui.add_space(2.0);
                 let Some(lim) = find_limits(&self.chat_model) else {
-                    ui.weak("No limit data for this model.");
-                    ui.weak("Snapshot Oct 11 2026 · free tier.");
+                    ui.weak("No snapshot data for this model.");
+                    ui.hyperlink_to("Open AI Studio", "https://aistudio.google.com/");
                     return;
                 };
                 if lim.rpm == 0 && lim.rpd == 0 && lim.tpm == 0 {
@@ -656,7 +661,7 @@ impl NotepadApp {
                 }
                 ui.label(format!("{} · {}", lim.display, lim.category));
                 ui.label(format!(
-                    "RPM  {} / {}   ·   TPM  {} / {}   ·   RPD  {} / {}",
+                    "Peak use / limit:  RPM {} / {}   ·   TPM {} / {}   ·   RPD {} / {}",
                     fmt_num(lim.peak_rpm),
                     fmt_num(lim.rpm),
                     fmt_num(lim.peak_tpm),
@@ -664,7 +669,6 @@ impl NotepadApp {
                     fmt_num(lim.peak_rpd),
                     fmt_num(lim.rpd),
                 ));
-                ui.weak("Peak use over 28 days vs limit.");
                 // Session progress against the daily (RPD) limit. Google offers
                 // no per-key usage endpoint, so this counts this app session only.
                 let used = self
@@ -683,7 +687,7 @@ impl NotepadApp {
                             // is baked into our own white label instead.
                             .text(
                                 egui::RichText::new(format!(
-                                    "{used}/{} · {}%",
+                                    "{used}/{} this session · {}%",
                                     lim.rpd,
                                     (frac * 100.0).round() as u32,
                                 ))
@@ -691,10 +695,11 @@ impl NotepadApp {
                             ),
                     );
                 } else {
-                    ui.weak(format!("{used} session requests."));
+                    ui.weak(format!("{used} requests this session."));
                 }
-                ui.weak(
-                    "Limits snapshot Oct 11 2026 · free tier · live usage: AI Studio dashboard.",
+                ui.hyperlink_to(
+                    "Check current limits in AI Studio",
+                    "https://aistudio.google.com/",
                 );
             });
     }
@@ -828,35 +833,9 @@ impl NotepadApp {
             .max_width((ctx.available_rect().width() - MIN_EDITOR_WIDTH).max(MIN_SIDE_PANEL_WIDTH))
             .frame(panel_frame(ctx))
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Assistant").strong().size(14.0));
-                    let status_color = if has_key {
-                        ACCENT
-                    } else {
-                        ui.visuals().warn_fg_color
-                    };
-                    let status_text = if has_key { "Gemini" } else { "Setup needed" };
-                    egui::Frame::none()
-                        .fill(SURFACE)
-                        .rounding(10.0)
-                        .inner_margin(egui::Margin::symmetric(7.0, 2.0))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 5.0;
-                                let (rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(6.0, 6.0),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().circle_filled(rect.center(), 3.0, status_color);
-                                ui.label(egui::RichText::new(status_text).small().weak());
-                            });
-                        });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if header_close_button(ui, "Close").clicked() {
-                            self.tabs.assistant = false;
-                        }
-                    });
-                });
+                if panel_header(ui, "Assistant", "Close").clicked() {
+                    self.tabs.assistant = false;
+                }
                 ui.separator();
                 // Roomier spacing, and everything below scrolls so short
                 // windows clip nothing instead of hiding content.

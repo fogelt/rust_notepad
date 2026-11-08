@@ -74,7 +74,9 @@ pub fn apply(ctx: &egui::Context) {
     visuals.window_rounding = egui::Rounding::same(8.0);
     visuals.menu_rounding = egui::Rounding::same(6.0);
     visuals.selection.bg_fill = ACCENT;
-    visuals.selection.stroke = egui::Stroke::NONE;
+    // A zero-width stroke still supplies the selected-text color (white)
+    // without drawing a border around selected labels/buttons.
+    visuals.selection.stroke = egui::Stroke::new(0.0_f32, ACCENT_TEXT);
     visuals.text_cursor = egui::Stroke::new(1.0_f32, ACCENT);
     visuals.error_fg_color = egui::Color32::from_rgb(230, 118, 118);
     visuals.warn_fg_color = egui::Color32::from_rgb(226, 178, 94);
