@@ -1,8 +1,8 @@
-use crate::app::NotepadApp;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::theme::{
     ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
 };
+use crate::app::NotepadApp;
 use eframe::egui;
 use egui_phosphor::regular as icons;
 use rfd::FileDialog;
@@ -30,7 +30,11 @@ fn view_tab(
     let hovered = response.hovered();
 
     let fill = if *selected {
-        if hovered { ACCENT_HOVERED } else { ACCENT }
+        if hovered {
+            ACCENT_HOVERED
+        } else {
+            ACCENT
+        }
     } else if hovered {
         SURFACE_ACTIVE
     } else {
@@ -237,7 +241,7 @@ impl NotepadApp {
                         );
                         ui.separator();
                         ui.allocate_ui_with_layout(
-                            egui::vec2(104.0, 30.0),
+                            egui::vec2(96.0, 30.0),
                             egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                             |ui| self.show_settings_menu(ui),
                         );
@@ -460,54 +464,67 @@ fn display_name(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Settings menu button built from the standard button widget so its vertical
-/// metrics match the File menu. The flipping caret is drawn inside its rect.
+/// Settings menu button. The hover/open background fills the whole slot like
+/// the File menu, while the label and flipping caret stay tightly grouped.
 fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Response) {
-    // Reserve a little room after the label for the caret, so the standard
-    // button's left padding stays the same as the File menu.
-    let font = egui::TextStyle::Button.resolve(ui.style());
-    let mut label = egui::text::LayoutJob::default();
-    label.append(
-        "Settings   ",
-        0.0,
-        egui::TextFormat {
-            font_id: font,
-            color: egui::Color32::PLACEHOLDER,
-            ..Default::default()
-        },
-    );
-
-    let button = egui::Button::new(label);
-    let button = if open {
-        button.fill(ui.visuals().widgets.open.weak_bg_fill)
+    let slot = ui.max_rect();
+    let response = ui.interact(slot, ui.id().with("settings_button"), egui::Sense::click());
+    let hovered = response.hovered();
+    let visuals = if open {
+        ui.visuals().widgets.open
+    } else if hovered {
+        ui.visuals().widgets.hovered
     } else {
-        button
+        ui.visuals().widgets.inactive
     };
-    let response = ui.add(button);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, "Settings"));
 
-    let flip = ui
-        .ctx()
-        .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
-    let text_color = if response.hovered() {
-        ui.visuals().widgets.hovered.fg_stroke.color
-    } else {
-        ui.visuals().widgets.inactive.fg_stroke.color
-    };
-    draw_chevron(
-        ui,
-        egui::pos2(response.rect.right() - 9.0, response.rect.center().y),
-        flip,
-        if open || response.hovered() {
-            ACCENT
-        } else {
-            text_color
-        },
-    );
-    if flip > 0.0 && flip < 1.0 {
-        ui.ctx().request_repaint();
+    if ui.is_rect_visible(slot) {
+        ui.painter().rect(
+            slot,
+            visuals.rounding,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+        );
+
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        let galley =
+            ui.painter()
+                .layout_no_wrap(String::from("Settings"), font, egui::Color32::PLACEHOLDER);
+        let text_width = galley.size().x;
+        let arrow_gap = 9.0;
+        let arrow_half_width = 4.0;
+        let content_width = text_width + arrow_gap + arrow_half_width * 2.0;
+        let start_x = slot.center().x - content_width * 0.5;
+        let text_color = visuals.fg_stroke.color;
+
+        ui.painter().galley(
+            egui::pos2(start_x, slot.center().y - galley.size().y * 0.5),
+            galley,
+            text_color,
+        );
+
+        let flip =
+            ui.ctx()
+                .animate_bool_with_time(egui::Id::new("settings_menu_arrow"), open, 0.16);
+        draw_chevron(
+            ui,
+            egui::pos2(
+                start_x + text_width + arrow_gap + arrow_half_width,
+                slot.center().y,
+            ),
+            flip,
+            if open || hovered { ACCENT } else { text_color },
+        );
+        if flip > 0.0 && flip < 1.0 {
+            ui.ctx().request_repaint();
+        }
     }
-    (response.rect, response)
+
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, "Settings"));
+    // Make the parent menu bar advance past the whole slot, so its trailing
+    // separator sits outside the hover background instead of through it.
+    ui.expand_to_include_rect(slot);
+    (slot, response)
 }
 
 /// Draw a small chevron pointing down at `flip = 0` and up at `flip = 1`.
