@@ -21,7 +21,7 @@ impl NotepadApp {
                 ui.painter().hline(
                     ui.max_rect().x_range(),
                     ui.max_rect().top(),
-                    egui::Stroke::new(1.0, BORDER),
+                    egui::Stroke::new(1.0_f32, BORDER),
                 );
 
                 ui.horizontal(|ui| {

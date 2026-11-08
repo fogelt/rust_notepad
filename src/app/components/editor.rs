@@ -157,7 +157,7 @@ fn preview_style(ui: &egui::Ui) -> egui::Style {
     style.visuals.hyperlink_color = ACCENT_LINK;
     style.visuals.code_bg_color = BG_CODE;
     style.visuals.extreme_bg_color = BG_CODE;
-    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, BORDER);
+    style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
     style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(6.0);
     style
 }

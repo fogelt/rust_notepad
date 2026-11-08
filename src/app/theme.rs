@@ -68,7 +68,7 @@ pub fn apply(ctx: &egui::Context) {
     visuals.faint_bg_color = BG_FAINT;
     visuals.code_bg_color = BG_CODE;
     visuals.hyperlink_color = ACCENT_LINK;
-    visuals.window_stroke = egui::Stroke::new(1.0, BORDER);
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, BORDER);
     visuals.window_rounding = egui::Rounding::same(8.0);
     visuals.menu_rounding = egui::Rounding::same(6.0);
     visuals.selection.bg_fill = ACCENT;
@@ -80,32 +80,32 @@ pub fn apply(ctx: &egui::Context) {
     let widgets = &mut visuals.widgets;
     widgets.noninteractive.bg_fill = BG_PANEL;
     widgets.noninteractive.weak_bg_fill = BG_PANEL;
-    widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, BORDER);
-    widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT);
+    widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
+    widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
     widgets.noninteractive.rounding = egui::Rounding::same(6.0);
 
     widgets.inactive.bg_fill = SURFACE;
     widgets.inactive.weak_bg_fill = SURFACE;
-    widgets.inactive.bg_stroke = egui::Stroke::new(1.0, BORDER);
-    widgets.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT);
+    widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
+    widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
     widgets.inactive.rounding = egui::Rounding::same(6.0);
 
     widgets.hovered.bg_fill = SURFACE_HOVERED;
     widgets.hovered.weak_bg_fill = SURFACE_HOVERED;
-    widgets.hovered.bg_stroke = egui::Stroke::new(1.0, BORDER_STRONG);
-    widgets.hovered.fg_stroke = egui::Stroke::new(1.5, egui::Color32::WHITE);
+    widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_STRONG);
+    widgets.hovered.fg_stroke = egui::Stroke::new(1.5_f32, egui::Color32::WHITE);
     widgets.hovered.rounding = egui::Rounding::same(6.0);
 
     widgets.active.bg_fill = SURFACE_ACTIVE;
     widgets.active.weak_bg_fill = SURFACE_ACTIVE;
-    widgets.active.bg_stroke = egui::Stroke::new(1.0, ACCENT);
-    widgets.active.fg_stroke = egui::Stroke::new(1.5, egui::Color32::WHITE);
+    widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
+    widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, egui::Color32::WHITE);
     widgets.active.rounding = egui::Rounding::same(6.0);
 
     widgets.open.bg_fill = SURFACE_ACTIVE;
     widgets.open.weak_bg_fill = SURFACE_ACTIVE;
-    widgets.open.bg_stroke = egui::Stroke::new(1.0, BORDER_STRONG);
-    widgets.open.fg_stroke = egui::Stroke::new(1.0, TEXT);
+    widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_STRONG);
+    widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
     widgets.open.rounding = egui::Rounding::same(6.0);
 
     style.visuals = visuals;
