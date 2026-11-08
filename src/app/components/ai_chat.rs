@@ -11,12 +11,6 @@ use egui_phosphor::regular as icons;
 use std::path::Path;
 use std::sync::mpsc;
 
-/// Outcome of one background Gemini request, tagged with the model used.
-pub struct ChatOutcome {
-    pub model: String,
-    pub result: Result<String, String>,
-}
-
 /// A small, curated set of models that work well for Markdown editing and
 /// voice instructions. Showing the whole live model catalog is overwhelming
 /// and includes many unrelated models.
@@ -55,168 +49,6 @@ pub fn model_label(id: &str) -> String {
         .map(|model| format!("{} · {}", model.label, model.note))
         .unwrap_or_else(|| id.to_string())
 }
-
-/// Free-tier rate limit snapshot (peak use over 28d / limit).
-/// Source: AI Studio dashboard, last updated October 11 2026.
-/// Google exposes no quota/usage endpoint for API keys, so these values are
-/// static; check the AI Studio dashboard for live numbers.
-pub struct RateLimit {
-    pub id: &'static str,
-    pub display: &'static str,
-    pub category: &'static str,
-    pub peak_rpm: u64,
-    pub rpm: u64,
-    pub peak_tpm: u64,
-    pub tpm: u64,
-    pub peak_rpd: u64,
-    pub rpd: u64,
-}
-
-pub const RATE_LIMITS: &[RateLimit] = &[
-    RateLimit {
-        id: "gemini-2.5-flash",
-        display: "Gemini 2.5 Flash",
-        category: "Text-out models",
-        peak_rpm: 3,
-        rpm: 5,
-        peak_tpm: 201,
-        tpm: 250_000,
-        peak_rpd: 20,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3.1-flash-lite",
-        display: "Gemini 3.1 Flash Lite",
-        category: "Text-out models",
-        peak_rpm: 2,
-        rpm: 15,
-        peak_tpm: 632,
-        tpm: 250_000,
-        peak_rpd: 8,
-        rpd: 500,
-    },
-    RateLimit {
-        id: "gemini-2.5-flash-lite",
-        display: "Gemini 2.5 Flash Lite",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 10,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3-flash",
-        display: "Gemini 3 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 5,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3.5-flash",
-        display: "Gemini 3.5 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 5,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3.5-flash-lite",
-        display: "Gemini 3.5 Flash Lite",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 15,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 500,
-    },
-    RateLimit {
-        id: "gemini-3.6-flash",
-        display: "Gemini 3.6 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 5,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3.7-flash",
-        display: "Gemini 3.7 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 5,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-3.8-flash",
-        display: "Gemini 3.8 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 5,
-        peak_tpm: 0,
-        tpm: 250_000,
-        peak_rpd: 0,
-        rpd: 20,
-    },
-    RateLimit {
-        id: "gemini-2.0-flash",
-        display: "Gemini 2 Flash",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 0,
-        peak_tpm: 0,
-        tpm: 0,
-        peak_rpd: 0,
-        rpd: 0,
-    },
-    RateLimit {
-        id: "gemini-2.0-flash-lite",
-        display: "Gemini 2 Flash Lite",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 0,
-        peak_tpm: 0,
-        tpm: 0,
-        peak_rpd: 0,
-        rpd: 0,
-    },
-    RateLimit {
-        id: "gemini-2.5-pro",
-        display: "Gemini 2.5 Pro",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 0,
-        peak_tpm: 0,
-        tpm: 0,
-        peak_rpd: 0,
-        rpd: 0,
-    },
-    RateLimit {
-        id: "gemini-3.1-pro",
-        display: "Gemini 3.1 Pro",
-        category: "Text-out models",
-        peak_rpm: 0,
-        rpm: 0,
-        peak_tpm: 0,
-        tpm: 0,
-        peak_rpd: 0,
-        rpd: 0,
-    },
-];
 
 /// Gemini inline requests are capped around 20 MB; base64 adds ~33%, so keep
 /// dropped files comfortably below that.
@@ -269,40 +101,6 @@ fn hovered_audio_name(ctx: &egui::Context) -> Option<String> {
             )
         })
     })
-}
-
-fn normalize_model_id(s: &str) -> String {
-    s.strip_prefix("models/")
-        .unwrap_or(s)
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
-}
-
-/// Find the static limit entry for a model id (exact match first, then the
-/// longest entry id that is a prefix, to catch dated variants like
-/// `gemini-2.5-flash-preview-05-20`).
-pub fn find_limits(model: &str) -> Option<&'static RateLimit> {
-    let norm = normalize_model_id(model);
-    if let Some(exact) = RATE_LIMITS
-        .iter()
-        .find(|l| normalize_model_id(l.id) == norm)
-    {
-        return Some(exact);
-    }
-    RATE_LIMITS
-        .iter()
-        .filter(|l| norm.starts_with(&normalize_model_id(l.id)))
-        .max_by_key(|l| l.id.len())
-}
-
-pub fn fmt_num(n: u64) -> String {
-    if n >= 1000 && n.is_multiple_of(1000) {
-        format!("{}K", n / 1000)
-    } else {
-        n.to_string()
-    }
 }
 
 /// Build the prompt sent to Gemini: user instruction + current document.
@@ -463,11 +261,10 @@ fn insert_at_cursor(app: &mut NotepadApp, ctx: &egui::Context, snippet: &str) {
 impl NotepadApp {
     fn poll_chat(&mut self) {
         if let Some(rx) = self.chat_rx.as_ref()
-            && let Ok(outcome) = rx.try_recv()
+            && let Ok(result) = rx.try_recv()
         {
-            match outcome.result {
+            match result {
                 Ok(text) => {
-                    *self.chat_session_requests.entry(outcome.model).or_insert(0) += 1;
                     self.chat_response = text;
                     self.chat_error = None;
                     self.status_message = String::from("Gemini suggestion ready.");
@@ -605,8 +402,7 @@ impl NotepadApp {
         crate::app::config::pick("", "GEMINI_API_KEY")
     }
 
-    /// Fetch the live model list once (needs the API key). Falls back to
-    /// the static snapshot when the request fails.
+    /// Send the instruction and the current document to Gemini.
     fn send_chat(&mut self) {
         let instruction = self.chat_input.trim().to_string();
         if instruction.is_empty() || self.chat_busy || self.transcribing || self.recording.is_some()
@@ -632,80 +428,12 @@ impl NotepadApp {
         self.chat_input.clear();
         self.status_message = String::from("Asking Gemini...");
         std::thread::spawn(move || {
-            let result = gemini_generate(&prompt, &api_key, &model);
-            let _ = tx.send(ChatOutcome { model, result });
+            let _ = tx.send(gemini_generate(&prompt, &api_key, &model));
         });
     }
 
-    fn show_rate_limits(&self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Free-tier limits (snapshot)")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.weak(
-                    "Static snapshot from Oct 11 2026 — not live. Google does not \
-                     expose per-key usage; open AI Studio for current limits.",
-                );
-                ui.add_space(2.0);
-                let Some(lim) = find_limits(&self.chat_model) else {
-                    ui.weak("No snapshot data for this model.");
-                    ui.hyperlink_to("Open AI Studio", "https://aistudio.google.com/");
-                    return;
-                };
-                if lim.rpm == 0 && lim.rpd == 0 && lim.tpm == 0 {
-                    let err_color = ui.visuals().error_fg_color;
-                    ui.colored_label(
-                        err_color,
-                        "Free-tier limit is 0 — this model looks unavailable \
-                     (requests fail with 429 limit: 0). Pick another model.",
-                    );
-                }
-                ui.label(format!("{} · {}", lim.display, lim.category));
-                ui.label(format!(
-                    "Peak use / limit:  RPM {} / {}   ·   TPM {} / {}   ·   RPD {} / {}",
-                    fmt_num(lim.peak_rpm),
-                    fmt_num(lim.rpm),
-                    fmt_num(lim.peak_tpm),
-                    fmt_num(lim.tpm),
-                    fmt_num(lim.peak_rpd),
-                    fmt_num(lim.rpd),
-                ));
-                // Session progress against the daily (RPD) limit. Google offers
-                // no per-key usage endpoint, so this counts this app session only.
-                let used = self
-                    .chat_session_requests
-                    .get(&self.chat_model)
-                    .copied()
-                    .unwrap_or(0);
-                if lim.rpd > 0 {
-                    let frac = (used as f32 / lim.rpd as f32).clamp(0.0, 1.0);
-                    ui.add(
-                        egui::ProgressBar::new(frac)
-                            .fill(ACCENT)
-                            .rounding(egui::Rounding::ZERO)
-                            // Note: no `.show_percentage()` — it replaces
-                            // custom text (and its color), so the percent
-                            // is baked into our own white label instead.
-                            .text(
-                                egui::RichText::new(format!(
-                                    "{used}/{} this session · {}%",
-                                    lim.rpd,
-                                    (frac * 100.0).round() as u32,
-                                ))
-                                .color(egui::Color32::WHITE),
-                            ),
-                    );
-                } else {
-                    ui.weak(format!("{used} requests this session."));
-                }
-                ui.hyperlink_to(
-                    "Check current limits in AI Studio",
-                    "https://aistudio.google.com/",
-                );
-            });
-    }
-
-    /// API key, model and rate limits live in a collapsible settings block so
-    /// the instruction + suggestion stay front and center.
+    /// API key and model live in a collapsible settings block so the
+    /// instruction + suggestion stay front and center.
     fn show_assistant_settings(&mut self, ui: &mut egui::Ui) {
         ui.add_space(2.0);
         ui.label(egui::RichText::new("API key").strong());
@@ -798,7 +526,6 @@ impl NotepadApp {
         ui.weak("Only models that work well for Markdown edits are listed.");
 
         ui.add_space(4.0);
-        self.show_rate_limits(ui);
     }
 
     pub fn show_chat_panel(&mut self, ctx: &egui::Context) {
@@ -1118,23 +845,6 @@ mod tests {
     }
 
     #[test]
-    fn finds_limits_by_exact_and_prefixed_ids() {
-        assert_eq!(find_limits("gemini-2.5-flash").unwrap().rpd, 20);
-        assert_eq!(find_limits("models/gemini-3.1-flash-lite").unwrap().rpm, 15);
-        assert_eq!(
-            find_limits("gemini-2.5-flash-preview-05-20").unwrap().id,
-            "gemini-2.5-flash"
-        );
-        assert!(find_limits("some-unknown-model").is_none());
-    }
-
-    #[test]
-    fn formats_big_numbers_compactly() {
-        assert_eq!(fmt_num(5), "5");
-        assert_eq!(fmt_num(250_000), "250K");
-    }
-
-    #[test]
     fn curated_models_are_unique_and_usable() {
         assert!(!MODELS.is_empty());
         assert!(MODELS.iter().any(|m| m.id == default_model()));
@@ -1145,7 +855,6 @@ mod tests {
         for model in MODELS {
             assert!(!model.label.is_empty());
             assert!(!model.note.is_empty());
-            assert!(find_limits(model.id).is_some());
         }
     }
 

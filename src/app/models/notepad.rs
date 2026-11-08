@@ -1,10 +1,8 @@
 use egui_commonmark::CommonMarkCache;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 use crate::app::audio::RecordingSession;
-use crate::app::components::ai_chat::ChatOutcome;
 
 /// Visibility toggles for the three main panels, driven by the header tabs.
 /// Adding a new panel: add a field here, a tab in `show_top_bar`, and gate
@@ -35,13 +33,11 @@ pub struct NotepadApp {
     pub chat_response: String,
     pub chat_error: Option<String>,
     pub chat_busy: bool,
-    pub chat_rx: Option<Receiver<ChatOutcome>>,
+    pub chat_rx: Option<Receiver<Result<String, String>>>,
     pub chat_model: String,
     pub chat_api_key: String,
     /// Show the API key in plaintext (transient UI state, not persisted).
     pub chat_show_key: bool,
-    /// Successful Gemini requests this session, per model id.
-    pub chat_session_requests: HashMap<String, u32>,
     /// Microphone recording in progress (voice instruction).
     pub recording: Option<RecordingSession>,
     /// True while a transcription request is in flight.
@@ -140,7 +136,6 @@ impl Default for NotepadApp {
             },
             chat_api_key: crate::app::config::pick(&stored.api_key, "GEMINI_API_KEY"),
             chat_show_key: false,
-            chat_session_requests: HashMap::new(),
             recording: None,
             transcribing: false,
             transcribe_rx: None,

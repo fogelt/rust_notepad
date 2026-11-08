@@ -91,7 +91,7 @@ pub fn code_block<'t>(
 
     // Reserve room on the right for the copy button so it never overlaps code
     // (or pokes outside a one-line block).
-    let button_space = 50.0;
+    let button_space = 58.0;
     let inner_width = (max_width - button_space).max(80.0);
 
     // We use a `TextEdit` to make the text selectable.
@@ -101,10 +101,10 @@ pub fn code_block<'t>(
         .layouter(layouter)
         .desired_width(inner_width)
         .margin(egui::Margin {
-            left: 8.0,
-            right: 42.0,
-            top: 4.0,
-            bottom: 4.0,
+            left: 12.0,
+            right: 46.0,
+            top: 8.0,
+            bottom: 8.0,
         })
         // prevent trailing lines
         .desired_rows(1)
@@ -123,9 +123,16 @@ pub fn code_block<'t>(
     );
 
     // Copy button, inset from the top-right corner and fully inside the frame.
-    let copy_button_rect = egui::Rect::from_min_size(
-        egui::pos2(frame_rect.right() - 38.0, frame_rect.top() + 3.0),
-        egui::vec2(30.0, 20.0),
+    // One-line blocks center it vertically; longer blocks keep it at the top.
+    let button_size = egui::vec2(30.0, 22.0);
+    let button_center_y = if text.contains('\n') {
+        frame_rect.top() + 8.0 + button_size.y * 0.5
+    } else {
+        frame_rect.center().y
+    };
+    let copy_button_rect = egui::Rect::from_center_size(
+        egui::pos2(frame_rect.right() - 25.0, button_center_y),
+        button_size,
     );
     let toast_id = egui::Id::new(("egui_commonmark_copied", text));
     let now = ui.ctx().input(|i| i.time);
