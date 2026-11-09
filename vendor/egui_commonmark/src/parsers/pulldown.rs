@@ -167,8 +167,8 @@ fn parser_options() -> Options {
 
 pub struct CommonMarkViewerInternal {
     source_id: Id,
-    curr_table: usize,
     text_style: crate::Style,
+    heading_rect: Option<egui::Rect>,
     list: List,
     link: Option<crate::Link>,
     image: Option<crate::Image>,
@@ -182,8 +182,8 @@ impl CommonMarkViewerInternal {
     pub fn new(source_id: Id) -> Self {
         Self {
             source_id,
-            curr_table: 0,
             text_style: crate::Style::default(),
+            heading_rect: None,
             list: List::default(),
             link: None,
             image: None,
@@ -402,35 +402,69 @@ impl CommonMarkViewerInternal {
         if self.is_table {
             newline(ui);
 
-            let id = self.source_id.with(self.curr_table);
-            self.curr_table += 1;
-
             egui::Frame::group(ui.style()).show(ui, |ui| {
-                let Table { header, rows } = parse_table(events);
+                // The viewer's root layout is horizontal; a table needs to
+                // stack its rows vertically.
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let Table { header, rows } = parse_table(events);
+                    let columns = header.len().max(1);
 
-                egui::Grid::new(id).striped(true).show(ui, |ui| {
-                    for col in header {
-                        ui.horizontal(|ui| {
-                            for e in col {
-                                self.should_insert_newline = false;
-                                self.event(ui, e, cache, options, max_width);
-                            }
-                        });
-                    }
-
-                    ui.end_row();
-
-                    for row in rows {
-                        for col in row {
-                            ui.horizontal(|ui| {
-                                for e in col {
-                                    self.should_insert_newline = false;
-                                    self.event(ui, e, cache, options, max_width);
+                    // Lay each row out with egui's equal-width columns. Every
+                    // cell wraps inside its column, and the row height comes
+                    // from the tallest cell, so wide tables fit the preview
+                    // instead of spilling out of the panel.
+                    egui::Frame::none()
+                        .inner_margin(egui::Margin {
+                            left: 2.0,
+                            right: 2.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        })
+                        .show(ui, |ui| {
+                            ui.columns(columns, |cols| {
+                                for (index, col) in header.into_iter().enumerate() {
+                                    let cell = &mut cols[index];
+                                    cell.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 0.0;
+                                        for e in col {
+                                            self.should_insert_newline = false;
+                                            self.event(ui, e, cache, options, max_width);
+                                        }
+                                    });
                                 }
                             });
-                        }
+                        });
 
-                        ui.end_row();
+                    for (row_index, row) in rows.into_iter().enumerate() {
+                        let fill = if row_index % 2 == 0 {
+                            ui.visuals().faint_bg_color
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        egui::Frame::none()
+                            .fill(fill)
+                            .rounding(2.0)
+                            .inner_margin(egui::Margin {
+                                left: 2.0,
+                                right: 2.0,
+                                top: 3.0,
+                                bottom: 3.0,
+                            })
+                            .show(ui, |ui| {
+                                ui.columns(columns, |cols| {
+                                    for (index, col) in row.into_iter().enumerate() {
+                                        let cell = &mut cols[index];
+                                        cell.horizontal_wrapped(|ui| {
+                                            ui.spacing_mut().item_spacing.x = 0.0;
+                                            for e in col {
+                                                self.should_insert_newline = false;
+                                                self.event(ui, e, cache, options, max_width);
+                                            }
+                                        });
+                                    }
+                                });
+                            });
                     }
                 });
             });
@@ -508,7 +542,13 @@ impl CommonMarkViewerInternal {
             );
             job.wrap.max_width = ui.available_width();
             crate::apply_line_height(options.line_spacing, &mut job);
-            ui.label(job);
+            let response = ui.label(job);
+            if self.text_style.heading.is_some() {
+                self.heading_rect = Some(match self.heading_rect {
+                    Some(previous) => previous.union(response.rect),
+                    None => response.rect,
+                });
+            }
         }
     }
 
@@ -522,6 +562,7 @@ impl CommonMarkViewerInternal {
             }
             pulldown_cmark::Tag::Heading { level, .. } => {
                 newline(ui);
+                self.heading_rect = None;
                 self.text_style.heading = Some(match level {
                     HeadingLevel::H1 => 0,
                     HeadingLevel::H2 => 1,
@@ -602,9 +643,27 @@ impl CommonMarkViewerInternal {
             pulldown_cmark::TagEnd::Paragraph => {
                 newline(ui);
             }
-            pulldown_cmark::TagEnd::Heading { .. } => {
+            pulldown_cmark::TagEnd::Heading(level) => {
                 newline(ui);
                 self.text_style.heading = None;
+                // GitHub draws a thin rule directly under its top headings.
+                if matches!(
+                    level,
+                    HeadingLevel::H1 | HeadingLevel::H2 | HeadingLevel::H3
+                ) {
+                    if let Some(rect) = self.heading_rect.take() {
+                        ui.painter().hline(
+                            ui.max_rect().x_range(),
+                            rect.bottom() + 2.0,
+                            egui::Stroke::new(
+                                1.0_f32,
+                                ui.visuals().widgets.noninteractive.bg_stroke.color,
+                            ),
+                        );
+                    }
+                } else {
+                    self.heading_rect = None;
+                }
             }
             pulldown_cmark::TagEnd::BlockQuote => {}
             pulldown_cmark::TagEnd::CodeBlock => {
