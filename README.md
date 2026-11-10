@@ -44,9 +44,11 @@ unsigned; choose **More info → Run anyway**.
 
 ### macOS
 
-Open the `.dmg` and drag the app to Applications. The build is unsigned, so the
-first launch needs **right-click → Open**. macOS asks for microphone access the
-first time you dictate with the microphone.
+Open the `.dmg` and drag the app to Applications. The build is ad-hoc signed
+but not notarized, so Gatekeeper may block the first launch: on older macOS
+versions use **right-click → Open**; on macOS Sequoia and later use
+**System Settings → Privacy & Security → Open Anyway**. macOS asks for
+microphone access the first time you dictate with the microphone.
 
 ### Linux
 
@@ -154,7 +156,7 @@ cargo install cargo-packager --locked
 cargo packager --release   # installer for the host OS
 ```
 
-Pushing a `v*` tag (for example `v0.3.2`) runs
+Pushing a `v*` tag (for example `v0.3.3`) runs
 `.github/workflows/release.yml`, which builds Windows, macOS, and Linux
 installers on native runners and attaches them to a GitHub release.
 

@@ -647,10 +647,7 @@ impl CommonMarkViewerInternal {
                 newline(ui);
                 self.text_style.heading = None;
                 // GitHub draws a thin rule directly under its top headings.
-                if matches!(
-                    level,
-                    HeadingLevel::H1 | HeadingLevel::H2 | HeadingLevel::H3
-                ) {
+                if matches!(level, HeadingLevel::H1 | HeadingLevel::H2) {
                     if let Some(rect) = self.heading_rect.take() {
                         ui.painter().hline(
                             ui.max_rect().x_range(),
@@ -719,6 +716,9 @@ impl CommonMarkViewerInternal {
         if let Some(block) = self.fenced_code_block.take() {
             block.end(ui, cache, options, max_width);
             self.text_style.code = false;
+            // Make sure the next block starts on a fresh line (important when
+            // the fence follows a paragraph with no blank line in between).
+            self.should_insert_newline = true;
         }
     }
 }

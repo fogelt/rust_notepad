@@ -104,7 +104,7 @@ pub fn code_block<'t>(
             left: 12.0,
             right: 46.0,
             top: 8.0,
-            bottom: 8.0,
+            bottom: 16.0,
         })
         // prevent trailing lines
         .desired_rows(1)

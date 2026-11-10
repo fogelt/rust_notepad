@@ -510,6 +510,17 @@ impl Style {
                     text = text.size(size);
                 }
             }
+            // Headings stay bright white so they stand apart from the slightly
+            // muted body copy and links.
+            text = text.color(ui.visuals().strong_text_color());
+        } else {
+            let color = ui.visuals().text_color();
+            let muted = egui::Color32::from_rgb(
+                (color.r() as f32 * 0.85) as u8,
+                (color.g() as f32 * 0.85) as u8,
+                (color.b() as f32 * 0.85) as u8,
+            );
+            text = text.color(muted);
         }
 
         if self.quote {
@@ -558,6 +569,10 @@ impl Link {
         }
         layout_job.wrap.max_width = ui.available_width();
         apply_line_height(1.45, &mut layout_job);
+        // Link text is always the accent tint, even though body copy is muted.
+        for section in &mut layout_job.sections {
+            section.format.color = ui.visuals().hyperlink_color;
+        }
         if cache.link_hooks().contains_key(&destination) {
             let ui_link = ui.link(layout_job);
             if ui_link.clicked() || ui_link.middle_clicked() {
@@ -646,8 +661,9 @@ impl FencedCodeBlock {
         });
 
         elements::newline(ui);
-        // A little breathing room before whatever follows the code block.
-        ui.add_space(8.0);
+        // The code block's own bottom margin provides the breathing room
+        // before whatever follows, so it also works when no blank line
+        // separates the fence from the next paragraph.
     }
 }
 
