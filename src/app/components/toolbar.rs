@@ -85,7 +85,7 @@ fn mix_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 
 /// Accent-filled dictation button. `icon` is the glyph to show, or `None` for
 /// an animated spinner. `pulse` gently animates the control while recording or
-/// transcribing. The size stays fixed so the toolbar never jumps.
+/// finishing. The size stays fixed so the toolbar never jumps.
 fn dictation_button(
     ui: &mut egui::Ui,
     icon: Option<&str>,
@@ -531,13 +531,8 @@ impl NotepadApp {
                     // Document dictation. One accent button changes icon with
                     // state; the timer/status sits in a fixed container to its
                     // right so the row stays centered and stable.
-                    let show_spinner = self.transcribing || self.live_finishing;
+                    let show_spinner = self.dictation_stopping;
                     if show_spinner {
-                        let label = if self.transcribing {
-                            "Transcribing…"
-                        } else {
-                            "Finishing…"
-                        };
                         ui.allocate_ui_with_layout(
                             egui::vec2(138.0, 28.0),
                             egui::Layout::left_to_right(egui::Align::Center),
@@ -554,18 +549,22 @@ impl NotepadApp {
                                             .rounding(6.0)
                                             .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                                             .show(ui, |ui| {
-                                                ui.label(egui::RichText::new(label).small());
+                                                ui.label(egui::RichText::new("Finishing…").small());
                                             });
                                     },
                                 );
                             },
                         );
-                    } else if self.live.is_some() {
-                        let secs = self
-                            .live
-                            .as_ref()
-                            .map(|session| session.elapsed().as_secs())
-                            .unwrap_or(0);
+                    } else if let Some(secs) = self
+                        .local_dictation
+                        .as_ref()
+                        .map(|session| session.elapsed().as_secs())
+                        .or_else(|| {
+                            self.provider_dictation
+                                .as_ref()
+                                .map(|session| session.elapsed().as_secs())
+                        })
+                    {
                         let stop = ui
                             .allocate_ui_with_layout(
                                 egui::vec2(106.0, 28.0),
@@ -607,7 +606,7 @@ impl NotepadApp {
                             )
                             .inner;
                         if stop {
-                            self.stop_live_dictation();
+                            self.stop_dictation();
                         }
                     } else {
                         let start = ui
@@ -620,15 +619,42 @@ impl NotepadApp {
                                         Some(icons::MICROPHONE),
                                         true,
                                         false,
-                                        "Dictate into the document in real time",
+                                        "Dictate into the document",
                                     )
                                     .clicked()
                                 },
                             )
                             .inner;
                         if start {
-                            self.start_live_dictation(ctx);
+                            self.start_dictation(ctx);
                         }
+                    }
+
+                    ui.add_space(2.0);
+                    let enabled =
+                        !self.html_busy && !self.chat_busy && !self.content.trim().is_empty();
+                    let icon = if self.html_busy { "" } else { icons::SPARKLE };
+                    let response = ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(
+                                egui::RichText::new(icon).size(16.0).color(ACCENT_TEXT),
+                            )
+                            .fill(ACCENT)
+                            .min_size(egui::vec2(30.0, 28.0)),
+                        )
+                        .on_hover_text("Create a visual report from this document");
+                    if self.html_busy {
+                        egui::Spinner::new().size(14.0).color(ACCENT_TEXT).paint_at(
+                            ui,
+                            egui::Rect::from_center_size(
+                                response.rect.center(),
+                                egui::vec2(14.0, 14.0),
+                            ),
+                        );
+                    }
+                    if response.clicked() {
+                        self.generate_styled_html();
                     }
                 });
             });

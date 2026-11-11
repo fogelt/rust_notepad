@@ -87,12 +87,20 @@ impl UiSettings {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AppConfig {
     #[serde(default)]
+    pub provider: String,
+    /// Legacy plaintext key, read once and migrated into the OS keychain.
+    /// Never written back to disk.
+    #[serde(default, skip_serializing)]
     pub api_key: String,
     #[serde(default)]
     pub model: String,
+    #[serde(default)]
+    pub dictation_model: String,
+    #[serde(default)]
+    pub dictation_source: String,
     #[serde(default)]
     pub ui: UiSettings,
 }
@@ -148,8 +156,11 @@ mod tests {
     #[test]
     fn roundtrips_through_json() {
         let cfg = AppConfig {
-            api_key: "AIza-test".to_string(),
+            provider: "gemini".to_string(),
+            api_key: String::new(),
             model: "gemini-3.8-flash".to_string(),
+            dictation_model: "base".to_string(),
+            dictation_source: "local".to_string(),
             ui: UiSettings {
                 editor_font: EditorFont::Monospace,
                 editor_font_size: 17.0,
@@ -161,6 +172,16 @@ mod tests {
         };
         let json = serde_json::to_string(&cfg).unwrap();
         assert_eq!(serde_json::from_str::<AppConfig>(&json).unwrap(), cfg);
+    }
+
+    #[test]
+    fn legacy_keys_are_read_but_never_written() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"api_key":"sk-test","model":"gpt-4o"}"#).unwrap();
+        assert_eq!(cfg.api_key, "sk-test");
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!json.contains("api_key"), "{json}");
+        assert!(!json.contains("sk-test"), "{json}");
     }
 
     #[test]

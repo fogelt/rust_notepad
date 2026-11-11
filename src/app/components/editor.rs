@@ -2,72 +2,16 @@ use crate::app::NotepadApp;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH,
-    PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, panel_frame, panel_header,
+    ACCENT, ACCENT_HOVERED, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH,
+    MIN_SIDE_PANEL_WIDTH, PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, SURFACE, SURFACE_ACTIVE,
+    SURFACE_HOVERED, panel_frame, panel_header,
 };
 use eframe::egui;
 use egui_commonmark::CommonMarkViewer;
 use egui_phosphor::regular as icons;
-use pulldown_cmark::{Options, Parser, html};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
-
-/// Stylesheet used by the experimental litehtml preview. Colors mirror the
-/// app's dark theme so converted Markdown and assistant HTML feel native.
-const HTML_STYLE: &str = r#"
-body {
-    background: #1c1d20;
-    color: #e4e4e7;
-    font-family: "Segoe UI", -apple-system, sans-serif;
-    font-size: 15px;
-    line-height: 1.55;
-    margin: 0;
-    padding: 18px 28px 28px 28px;
-}
-h1, h2, h3, h4, h5, h6 {
-    color: #ffffff;
-    line-height: 1.25;
-    margin: 1.2em 0 0.5em 0;
-}
-h1 { font-size: 2.1em; border-bottom: 1px solid #3a3c44; padding-bottom: 0.3em; }
-h2 { font-size: 1.55em; border-bottom: 1px solid #3a3c44; padding-bottom: 0.25em; }
-h3 { font-size: 1.25em; }
-h4 { font-size: 1.05em; }
-p { margin: 0.8em 0; }
-a { color: #84aee0; text-decoration: none; }
-pre {
-    background: #15161a;
-    border: 1px solid #33353c;
-    border-radius: 6px;
-    padding: 10px 12px;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 13px;
-    white-space: pre-wrap;
-}
-code {
-    background: #24252a;
-    border-radius: 3px;
-    padding: 1px 4px;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 0.92em;
-}
-pre code { background: transparent; padding: 0; }
-table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-th, td { border: 1px solid #3a3c44; padding: 6px 10px; text-align: left; vertical-align: top; }
-th { background: #24252a; color: #ffffff; }
-tbody tr:nth-child(even) { background: #212226; }
-blockquote {
-    border-left: 3px solid #4a78ad;
-    color: #b9bbc2;
-    margin: 1em 0;
-    padding: 0.2em 0 0.2em 14px;
-}
-img { max-width: 100%; }
-hr { border: 0; border-top: 1px solid #3a3c44; margin: 1.5em 0; }
-ul, ol { padding-left: 1.6em; }
-li { margin: 0.25em 0; }
-"#;
 
 /// Convert a filesystem path to a `file://` URI understood by
 /// `egui_extras::FileLoader` (handles Windows `C:\` -> `file:///C:/...`).
@@ -256,6 +200,46 @@ fn icon_label(ui: &egui::Ui, icon: &str, label: &str) -> egui::text::LayoutJob {
     job
 }
 
+/// Icon-only segmented tab that mirrors the top bar's Assistant/Editor/Preview
+/// tabs. Used for the Visual/Text preview modes.
+fn preview_tab(
+    ui: &mut egui::Ui,
+    selected: bool,
+    icon: &str,
+    hover: &str,
+    rounding: egui::Rounding,
+) -> bool {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(24.0, 22.0), egui::Sense::click());
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hovered = response.hovered();
+    let fill = if selected {
+        if hovered { ACCENT_HOVERED } else { ACCENT }
+    } else if hovered {
+        SURFACE_ACTIVE
+    } else {
+        SURFACE_HOVERED
+    };
+    ui.painter().rect_filled(rect, rounding, fill);
+
+    let color = if selected {
+        ACCENT_TEXT
+    } else if hovered {
+        egui::Color32::WHITE
+    } else {
+        ui.visuals().text_color()
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::proportional(14.0),
+        color,
+    );
+
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, selected, hover));
+    response.on_hover_text(hover).clicked()
+}
+
 impl NotepadApp {
     pub fn show_editor(&mut self, ctx: &egui::Context) {
         let show_editor = self.tabs.editor;
@@ -275,6 +259,8 @@ impl NotepadApp {
                 .max_width(max_preview_w)
                 .frame(frame)
                 .show(ctx, |ui| {
+                    let mut visual_clicked = false;
+                    let mut text_clicked = false;
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("Preview").strong().size(14.0));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -282,12 +268,56 @@ impl NotepadApp {
                             {
                                 self.tabs.preview = false;
                             }
-                            ui.toggle_value(&mut self.preview_html, "HTML")
-                                .on_hover_text("Render the document as styled HTML");
+                            ui.add_space(6.0);
+                            egui::Frame::none()
+                                .fill(SURFACE)
+                                .rounding(6.0)
+                                .inner_margin(egui::Margin::ZERO)
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 0.0;
+                                    // This row inherits the right-to-left
+                                    // layout, so add Text first to place it on
+                                    // the right and Visual on the left.
+                                    ui.horizontal(|ui| {
+                                        text_clicked = preview_tab(
+                                            ui,
+                                            !self.preview_html,
+                                            icons::TEXT_AA,
+                                            "Text preview",
+                                            egui::Rounding {
+                                                nw: 0.0,
+                                                sw: 0.0,
+                                                ne: 5.0,
+                                                se: 5.0,
+                                            },
+                                        );
+                                        visual_clicked = preview_tab(
+                                            ui,
+                                            self.preview_html,
+                                            icons::CHART_BAR,
+                                            "Visual report",
+                                            egui::Rounding {
+                                                nw: 5.0,
+                                                sw: 5.0,
+                                                ne: 0.0,
+                                                se: 0.0,
+                                            },
+                                        );
+                                    });
+                                });
                         });
                     });
+                    if visual_clicked {
+                        self.preview_html = true;
+                        self.preview_revision = self.preview_revision.wrapping_add(1);
+                    }
+                    if text_clicked {
+                        self.preview_html = false;
+                        self.preview_revision = self.preview_revision.wrapping_add(1);
+                    }
                     ui.separator();
                     egui::ScrollArea::vertical()
+                        .id_source(("preview_scroll", self.preview_html, self.preview_revision))
                         .auto_shrink([false; 2])
                         .show(ui, |ui| self.show_preview_body(ui, false));
                 });
@@ -297,6 +327,7 @@ impl NotepadApp {
             // panel header, so it can be read (or shown fullscreen) edge to edge.
             egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
                 egui::ScrollArea::vertical()
+                    .id_source(("preview_scroll", self.preview_html, self.preview_revision))
                     .auto_shrink([false; 2])
                     .show(ui, |ui| self.show_preview_body(ui, true));
             });
@@ -321,8 +352,8 @@ impl NotepadApp {
             visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
 
             if self.is_dictating() {
-                let (badge_icon, badge_label) = if self.transcribing {
-                    (icons::WAVEFORM, "Transcribing")
+                let (badge_icon, badge_label) = if self.dictation_stopping {
+                    (icons::WAVEFORM, "Finishing")
                 } else {
                     (icons::MICROPHONE, "Dictating")
                 };
@@ -406,7 +437,7 @@ impl NotepadApp {
     }
 
     fn show_preview_body(&mut self, ui: &mut egui::Ui, full_width: bool) {
-        if self.preview_html && !self.content.trim().is_empty() {
+        if self.preview_html {
             self.show_html_preview_body(ui);
             return;
         }
@@ -538,69 +569,97 @@ impl NotepadApp {
             });
     }
 
-    /// Render the current document through the HTML engine. Markdown is
-    /// converted with pulldown-cmark; full HTML documents are used directly.
+    /// Show the assistant-designed HTML, or a call-to-action when none exists.
     fn show_html_preview_body(&mut self, ui: &mut egui::Ui) {
-        let mut hasher = DefaultHasher::new();
-        self.content.hash(&mut hasher);
-        self.file_path.hash(&mut hasher);
-        let source_hash = hasher.finish();
-
-        if self.html_source_cache.as_ref().map(|(hash, _)| *hash) != Some(source_hash) {
-            self.html_source_cache = Some((source_hash, self.html_document()));
-        }
-
-        let full_w = ui.available_width();
-        let content_w = full_w.clamp(160.0, PREVIEW_MAX_CONTENT_WIDTH);
-        let side = ((full_w - content_w) * 0.5).max(0.0);
-
-        ui.horizontal_top(|ui| {
-            ui.add_space(side);
-            ui.vertical(|ui| {
-                ui.set_width(content_w);
-                if self.html_preview.is_none() {
-                    self.html_preview =
-                        Some(crate::app::components::html_preview::HtmlPreview::new());
-                }
-                if let (Some(preview), Some((_, html))) =
-                    (&mut self.html_preview, &self.html_source_cache)
-                {
-                    preview.show(ui, html, source_hash, content_w);
+        if self.styled_html.is_none() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(48.0);
+                if self.html_busy {
+                    ui.spinner();
+                    ui.add_space(6.0);
+                    ui.label("Creating your visual report…");
+                    let secs = self
+                        .html_started
+                        .map(|started| started.elapsed().as_secs())
+                        .unwrap_or(0);
+                    ui.weak(if secs > 0 {
+                        format!("{secs}s elapsed · large documents can take a minute or two.")
+                    } else {
+                        String::from("Large documents can take a minute or two.")
+                    });
+                    ui.add_space(10.0);
+                    if ui.button("Cancel").clicked() {
+                        self.html_rx = None;
+                        self.html_busy = false;
+                        self.html_started = None;
+                        self.status_message = String::from("Visual report cancelled.");
+                    }
+                } else {
+                    ui.label(egui::RichText::new("No visual report yet").strong());
+                    ui.add_space(4.0);
+                    ui.weak(
+                        "Summarize this document as a visual report with charts and highlights.",
+                    );
+                    ui.add_space(12.0);
+                    let enabled = !self.chat_busy && !self.content.trim().is_empty();
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(format!("{}  Create visual report", icons::SPARKLE)),
+                        )
+                        .clicked()
+                    {
+                        self.generate_styled_html();
+                    }
+                    if let Some(error) = &self.html_error {
+                        ui.add_space(10.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(error)
+                                    .color(ui.visuals().error_fg_color)
+                                    .small(),
+                            )
+                            .wrap(true),
+                        );
+                    }
                 }
             });
-        });
-    }
-
-    fn html_document(&self) -> String {
-        let trimmed = self.content.trim_start();
-        if trimmed.starts_with("<!DOCTYPE")
-            || trimmed.starts_with("<!doctype")
-            || trimmed.starts_with("<html")
-        {
-            return litehtml::html::sanitize_html(&self.content);
+            return;
         }
 
-        let base_dir = self.file_path.as_ref().and_then(|p| {
-            if p.is_dir() {
-                Some(p.clone())
-            } else {
-                p.parent().map(|d| d.to_path_buf())
-            }
-        });
-        let with_images = resolve_image_uris(&self.content, base_dir.as_deref());
+        if self.html_busy {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                let secs = self
+                    .html_started
+                    .map(|started| started.elapsed().as_secs())
+                    .unwrap_or(0);
+                ui.label(format!("Updating visual report… {secs}s"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.html_rx = None;
+                        self.html_busy = false;
+                        self.html_started = None;
+                        self.status_message = String::from("Visual report cancelled.");
+                    }
+                });
+            });
+            ui.separator();
+        }
 
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_TABLES);
-        options.insert(Options::ENABLE_TASKLISTS);
-        options.insert(Options::ENABLE_STRIKETHROUGH);
-        options.insert(Options::ENABLE_FOOTNOTES);
-        let parser = Parser::new_ext(&with_images, options);
-        let mut body = String::new();
-        html::push_html(&mut body, parser);
+        let html = self.styled_html.as_deref().unwrap();
+        let mut hasher = DefaultHasher::new();
+        html.hash(&mut hasher);
+        let source_hash = hasher.finish();
+        let content_w = ui.available_width().max(160.0);
+        let min_height = ui.available_height().max(1.0);
 
-        format!(
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>{HTML_STYLE}</style></head><body>{body}</body></html>"
-        )
+        if self.html_preview.is_none() {
+            self.html_preview = Some(crate::app::components::html_preview::HtmlPreview::new());
+        }
+        if let Some(preview) = &mut self.html_preview {
+            preview.show(ui, html, source_hash, content_w, min_height);
+        }
     }
 
     /// Load the bundled app mark once and reuse the texture.

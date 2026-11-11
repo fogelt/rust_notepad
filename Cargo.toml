@@ -16,8 +16,9 @@ rfd = "0.14"
 egui_commonmark = { version = "0.14", features = ["fetch", "svg"] }
 egui-phosphor = "0.5"
 litehtml = { version = "0.2", features = ["pixbuf", "html"] }
-pulldown-cmark = "0.10"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+webbrowser = "1"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
 tokio = { version = "1", features = ["rt", "net", "time", "macros"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
@@ -25,7 +26,18 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dotenvy = "0.15"
 cpal = "0.15"
-base64 = "0.22"
+keyring = "4.2"
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "aiff"] }
+tar = "0.4"
+bzip2 = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+# The Windows prebuilt static libraries use the static CRT, which conflicts
+# with Rust's dynamic CRT, so link the shared build and ship its DLLs.
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["shared"] }
+
+[target.'cfg(not(windows))'.dependencies]
+sherpa-onnx = "2.0.1"
 
 [build-dependencies]
 winresource = "0.1"
@@ -34,6 +46,7 @@ winresource = "0.1"
 # Only egui_commonmark's task-marker rendering differs from 0.14.0.
 [patch.crates-io]
 egui_commonmark = { path = "vendor/egui_commonmark" }
+litehtml = { path = "vendor/litehtml" }
 litehtml-sys = { path = "vendor/litehtml-sys" }
 
 [profile.release]
@@ -131,6 +144,16 @@ Function un.onUninstSuccess
   !insertmacro APP_UNASSOCIATE "md" "RustyNotepad.Markdown"
   !insertmacro APP_UNASSOCIATE "markdown" "RustyNotepad.Markdown"
   !insertmacro UPDATEFILEASSOC
+
+  ; Remove downloaded dictation models and the API keys kept in Windows
+  ; Credential Manager (target format: api-key-<provider>.rust_notepad).
+  RMDir /r "$INSTDIR\models"
+  RMDir /r "$LOCALAPPDATA\Rusty Notepad\models"
+  ExecWait '"$SYSDIR\cmdkey.exe" /delete:api-key-gemini.rust_notepad'
+  ExecWait '"$SYSDIR\cmdkey.exe" /delete:api-key-openai.rust_notepad'
+  ExecWait '"$SYSDIR\cmdkey.exe" /delete:api-key-anthropic.rust_notepad'
+  ExecWait '"$SYSDIR\cmdkey.exe" /delete:api-key-openrouter.rust_notepad'
+  ExecWait '"$SYSDIR\cmdkey.exe" /delete:api-key-deepseek.rust_notepad'
 FunctionEnd
 '''
 

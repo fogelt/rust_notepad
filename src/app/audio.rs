@@ -1,20 +1,21 @@
-//! Microphone capture for real-time dictation.
+//! Microphone capture and audio-file decoding for dictation.
 //!
 //! Captures the default input device on a background audio callback, downmixes
-//! to mono and resamples to the 16 kHz PCM format expected by the Gemini Live
-//! API. The session thread drains 100 ms chunks while the socket is open.
+//! to mono and resamples to 16 kHz, which is what Whisper expects. The session
+//! thread drains 100 ms chunks while recording.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-/// Live transcription streams 16 kHz mono 16-bit PCM.
+/// Dictation runs at 16 kHz mono.
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
-/// Recommended Live API chunk size: 100 ms of 16-bit mono audio.
+/// Capture chunk size: 100 ms of 16-bit mono audio.
 pub const CHUNK_BYTES: usize = (TARGET_SAMPLE_RATE as usize / 10) * 2;
 
-/// A microphone capture in progress for the Gemini Live API.
-pub struct LiveAudio {
+/// A microphone capture in progress.
+pub struct Microphone {
     _stream: cpal::Stream,
     buffer: Arc<Mutex<Vec<f32>>>,
     error: Arc<Mutex<Option<String>>>,
@@ -25,7 +26,7 @@ pub struct LiveAudio {
     pcm: Vec<u8>,
 }
 
-impl LiveAudio {
+impl Microphone {
     /// Open the default microphone and start capturing.
     pub fn start() -> Result<Self, String> {
         let host = cpal::default_host();
@@ -187,6 +188,117 @@ fn resample_into(mono: &[f32], source_rate: u32, pos: &mut f64, out: &mut Vec<u8
         *pos += step;
     }
     *pos -= mono.len() as f64;
+}
+
+/// Decoded files are held in memory, so reject anything unreasonable.
+const MAX_AUDIO_BYTES: u64 = 200 * 1024 * 1024;
+
+/// Decode an audio file to 16 kHz mono `f32` samples for Whisper. Supports the
+/// formats bundled with symphonia: WAV, MP3, FLAC, Ogg/Vorbis, and MP4/AAC.
+pub fn decode_audio_file(path: &Path) -> Result<Vec<f32>, String> {
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+    use symphonia::core::errors::Error as SymphoniaError;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
+
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("Could not read the audio file: {e}"))?
+        .len();
+    if size > MAX_AUDIO_BYTES {
+        return Err(format!(
+            "That audio file is too large ({} MB). Use one under {} MB.",
+            size / (1024 * 1024),
+            MAX_AUDIO_BYTES / (1024 * 1024)
+        ));
+    }
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("Could not open the audio file: {e}"))?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+        hint.with_extension(ext);
+    }
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            stream,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| format!("Could not read the audio file: {e}"))?;
+    let mut format = probed.format;
+
+    let track = format
+        .tracks()
+        .iter()
+        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or_else(|| String::from("No audio track found in that file."))?;
+    let track_id = track.id;
+    let sample_rate = track.codec_params.sample_rate.unwrap_or(48_000);
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("Unsupported audio format: {e}"))?;
+
+    let mut mono = Vec::new();
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(SymphoniaError::IoError(err))
+                if err.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(SymphoniaError::ResetRequired) => break,
+            Err(err) => return Err(format!("Could not decode the audio file: {err}")),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            // A single corrupt frame shouldn't lose the rest of the file.
+            Err(SymphoniaError::DecodeError(_)) => continue,
+            Err(err) => return Err(format!("Could not decode the audio file: {err}")),
+        };
+        let spec = *decoded.spec();
+        let channels = spec.channels.count().max(1);
+        let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        buffer.copy_interleaved_ref(decoded);
+        for frame in buffer.samples().chunks(channels) {
+            mono.push(frame.iter().sum::<f32>() / channels as f32);
+        }
+    }
+
+    if mono.is_empty() {
+        return Err(String::from("The audio file is empty."));
+    }
+    Ok(resample_mono(&mono, sample_rate))
+}
+
+/// Linearly resample mono `f32` audio to 16 kHz.
+fn resample_mono(samples: &[f32], source_rate: u32) -> Vec<f32> {
+    if source_rate == 0 || samples.is_empty() {
+        return Vec::new();
+    }
+    if source_rate == TARGET_SAMPLE_RATE {
+        return samples.to_vec();
+    }
+    let step = source_rate as f64 / TARGET_SAMPLE_RATE as f64;
+    let mut out = Vec::with_capacity((samples.len() as f64 / step).ceil() as usize);
+    let mut pos = 0.0_f64;
+    while pos < samples.len() as f64 {
+        let index = pos as usize;
+        let fraction = pos - index as f64;
+        let a = samples[index];
+        let b = samples.get(index + 1).copied().unwrap_or(a);
+        out.push(a + (b - a) * fraction as f32);
+        pos += step;
+    }
+    out
 }
 
 #[cfg(test)]

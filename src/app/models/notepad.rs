@@ -1,26 +1,27 @@
 use eframe::egui;
 use egui_commonmark::CommonMarkCache;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
 use crate::app::config::UiSettings;
-use crate::app::live::LiveSession;
 
 /// Events streamed from the dictation worker.
 pub enum DictationEvent {
     /// A new piece of transcription text to append to the document.
     Delta(String),
-    /// Gemini finished the transcription.
+    /// A speculative partial transcription that replaces the previous one.
+    Interim(String),
+    /// An authoritative transcription for the current speech segment.
+    Final(String),
+    /// The worker finished the transcription.
     Finished,
     /// The request failed; the payload is the raw error.
     Failed(String),
 }
 
 /// An in-progress streamed dictation. Kept so the document can be updated as
-/// text arrives and restored exactly if the request fails.
+/// text arrives and restored exactly if the request is cancelled.
 pub struct DictationStream {
     pub original_content: String,
     pub original_range: Option<(usize, usize)>,
@@ -28,17 +29,17 @@ pub struct DictationStream {
     pub start_b: usize,
     /// Text already inserted into the document (without the trailing space).
     pub inserted: String,
-    /// Text received from Gemini that hasn't been revealed yet.
+    /// Text received that hasn't been revealed yet.
     pub pending: String,
-    /// Current interim live transcription shown after the finalized text.
+    /// Current interim transcription shown after the committed text.
     pub interim: String,
     /// Whether a separating space must be added after the stream ends.
     pub after_needs_space: bool,
-    /// True once Gemini finished; the pending text still needs revealing.
+    /// True once the worker finished; the pending text still needs revealing.
     pub finished: bool,
 }
 
-/// Transient overlay message, used for user-friendly Gemini errors.
+/// Transient overlay message, used for user-friendly errors.
 pub struct Toast {
     pub message: String,
     pub is_error: bool,
@@ -52,6 +53,40 @@ pub struct PanelTabs {
     pub editor: bool,
     pub preview: bool,
     pub assistant: bool,
+}
+
+/// Page shown in the top-bar Settings menu.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsTab {
+    #[default]
+    Appearance,
+    Provider,
+    Dictation,
+}
+
+/// Whether dictation uses a cloud provider or the local model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DictationSource {
+    #[default]
+    Provider,
+    Local,
+}
+
+impl DictationSource {
+    pub fn id(self) -> &'static str {
+        match self {
+            DictationSource::Provider => "provider",
+            DictationSource::Local => "local",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id.trim().to_ascii_lowercase().as_str() {
+            "provider" | "cloud" => Some(DictationSource::Provider),
+            "local" | "offline" => Some(DictationSource::Local),
+            _ => None,
+        }
+    }
 }
 
 impl Default for PanelTabs {
@@ -73,25 +108,47 @@ pub struct NotepadApp {
     /// Render the preview through the HTML engine instead of CommonMark.
     pub preview_html: bool,
     pub html_preview: Option<crate::app::components::html_preview::HtmlPreview>,
-    /// Cached `(content hash, generated HTML)` for the HTML preview.
-    pub html_source_cache: Option<(u64, String)>,
+    /// Bumped when the preview mode/source changes to reset its scroll offset.
+    pub preview_revision: u64,
     pub chat_input: String,
     pub chat_response: String,
     pub chat_busy: bool,
     pub chat_rx: Option<Receiver<Result<String, String>>>,
+    /// Assistant-generated styled HTML for the current document, kept separate
+    /// from the Markdown so the source is never modified.
+    pub styled_html: Option<String>,
+    pub html_busy: bool,
+    pub html_rx: Option<Receiver<Result<String, String>>>,
+    pub html_error: Option<String>,
+    /// When the current visual-report request started, for the elapsed timer.
+    pub html_started: Option<Instant>,
     pub chat_model: String,
-    pub chat_api_key: String,
-    /// Show the API key in plaintext (transient UI state, not persisted).
-    pub chat_show_key: bool,
-    /// Live microphone dictation session.
-    pub live: Option<LiveSession>,
-    /// True once Stop was pressed and we're waiting for the final transcript.
-    pub live_finishing: bool,
-    /// True while a dropped-file transcription request is in flight.
-    pub transcribing: bool,
-    pub transcribe_rx: Option<Receiver<DictationEvent>>,
-    /// Set to ask the streaming worker to stop early.
-    pub transcribe_cancel: Option<Arc<AtomicBool>>,
+    /// Provider used for assistant text and visual reports.
+    pub chat_provider: crate::app::components::provider::Provider,
+    /// Providers with a key saved in the OS credential store.
+    pub stored_keys: std::collections::HashSet<crate::app::components::provider::Provider>,
+    /// Provider whose key is currently being entered.
+    pub key_edit: Option<crate::app::components::provider::Provider>,
+    /// Transient input for the key being entered; cleared after saving.
+    pub key_input: String,
+    /// Last keychain error, shown in Settings.
+    pub key_error: Option<String>,
+    /// Page shown in the top-bar Settings menu.
+    pub settings_tab: SettingsTab,
+    /// Local Whisper model used for dictation.
+    pub dictation_model: String,
+    /// Cloud provider or local Whisper for dictation.
+    pub dictation_source: DictationSource,
+    /// Local Whisper model download in progress.
+    pub whisper_download: Option<crate::app::local_stt::ModelDownload>,
+    /// Last local model download error, shown in settings.
+    pub whisper_error: Option<String>,
+    /// Active offline dictation session.
+    pub local_dictation: Option<crate::app::local_stt::LocalSession>,
+    /// Active provider dictation session.
+    pub provider_dictation: Option<crate::app::provider_stt::ProviderSession>,
+    /// True once the local session is flushing its last audio.
+    pub dictation_stopping: bool,
     /// Document edit being filled in by the stream.
     pub dictation_stream: Option<DictationStream>,
     /// Toast shown above the footer; auto-dismisses.
@@ -115,9 +172,25 @@ pub struct NotepadApp {
 }
 
 impl NotepadApp {
-    /// True while the microphone is recording or Gemini is transcribing.
+    /// True while the microphone is recording.
     pub fn is_dictating(&self) -> bool {
-        self.live.is_some() || self.transcribing
+        self.local_dictation.is_some() || self.provider_dictation.is_some()
+    }
+
+    /// Whether a provider has a key in the keychain or its environment.
+    pub fn has_api_key(&self, provider: crate::app::components::provider::Provider) -> bool {
+        self.stored_keys.contains(&provider)
+            || !crate::app::config::pick("", provider.env_var()).is_empty()
+    }
+
+    /// The selected local dictation model.
+    pub fn dictation_model(&self) -> &'static crate::app::local_stt::WhisperModel {
+        crate::app::local_stt::model(&self.dictation_model)
+    }
+
+    /// Paths for the selected model, if it is fully downloaded.
+    pub fn dictation_model_paths(&self) -> Option<crate::app::local_stt::ModelPaths> {
+        crate::app::local_stt::model_paths(self.dictation_model())
     }
 
     /// Recompute the cached footer statistics after `content` changes.
@@ -141,7 +214,7 @@ impl NotepadApp {
     }
 
     pub fn with_file(path: Option<PathBuf>) -> Self {
-        if let Some(p) = path {
+        let mut app = if let Some(p) = path {
             match std::fs::read_to_string(&p) {
                 Ok(text) => {
                     let word_count = text.split_whitespace().count();
@@ -173,7 +246,9 @@ impl NotepadApp {
             }
         } else {
             Self::default()
-        }
+        };
+        app.load_styled_html_sidecar();
+        app
     }
 }
 
@@ -181,6 +256,54 @@ impl Default for NotepadApp {
     fn default() -> Self {
         // Stored settings win; environment (.env) is the fallback.
         let stored = crate::app::config::load();
+        use crate::app::components::provider::Provider;
+        // An explicit provider wins; otherwise guess from the stored key.
+        let provider = Provider::from_id(&stored.provider)
+            .or_else(|| Provider::detect(&stored.api_key))
+            .unwrap_or_default();
+        let dictation_model = crate::app::local_stt::resolve_model(&stored.dictation_model);
+        let dictation_source =
+            DictationSource::from_id(&stored.dictation_source).unwrap_or_else(|| {
+                if crate::app::provider_stt::supports(provider) {
+                    DictationSource::Provider
+                } else {
+                    DictationSource::Local
+                }
+            });
+        let model = if !stored.model.trim().is_empty() {
+            stored.model.trim().to_string()
+        } else {
+            let env_model = if provider == Provider::Gemini {
+                crate::app::config::pick("", "GEMINI_MODEL")
+            } else {
+                String::new()
+            };
+            if env_model.is_empty() {
+                provider.default_model().to_string()
+            } else {
+                env_model
+            }
+        };
+        // Migration: move a legacy plaintext key into the OS keychain, then
+        // rewrite the config without it. This runs once.
+        let mut key_error = None;
+        if !stored.api_key.trim().is_empty() {
+            let key_provider = Provider::from_id(&stored.provider)
+                .or_else(|| Provider::detect(&stored.api_key))
+                .unwrap_or_default();
+            if let Err(err) = crate::app::keys::store(key_provider, &stored.api_key) {
+                key_error = Some(err);
+            }
+            let mut cleared = stored.clone();
+            cleared.api_key.clear();
+            let _ = crate::app::config::save(&cleared);
+        }
+        // Only credentials in the OS keychain count as "saved"; environment
+        // keys are reported separately in Settings.
+        let stored_keys: std::collections::HashSet<Provider> = Provider::ALL
+            .into_iter()
+            .filter(|provider| crate::app::keys::has(*provider))
+            .collect();
         Self {
             content: String::new(),
             file_path: None,
@@ -189,26 +312,30 @@ impl Default for NotepadApp {
             tabs: PanelTabs::default(),
             preview_html: false,
             html_preview: None,
-            html_source_cache: None,
+            preview_revision: 0,
             chat_input: String::new(),
             chat_response: String::new(),
             chat_busy: false,
             chat_rx: None,
-            chat_model: {
-                let model = crate::app::config::pick(&stored.model, "GEMINI_MODEL");
-                if model.is_empty() {
-                    crate::app::components::ai_chat::default_model().to_string()
-                } else {
-                    model
-                }
-            },
-            chat_api_key: crate::app::config::pick(&stored.api_key, "GEMINI_API_KEY"),
-            chat_show_key: false,
-            live: None,
-            live_finishing: false,
-            transcribing: false,
-            transcribe_rx: None,
-            transcribe_cancel: None,
+            styled_html: None,
+            html_busy: false,
+            html_rx: None,
+            html_error: None,
+            html_started: None,
+            chat_model: model,
+            chat_provider: provider,
+            stored_keys,
+            key_edit: None,
+            key_input: String::new(),
+            key_error,
+            settings_tab: SettingsTab::default(),
+            dictation_model: dictation_model.id.to_string(),
+            dictation_source,
+            whisper_download: None,
+            whisper_error: None,
+            local_dictation: None,
+            provider_dictation: None,
+            dictation_stopping: false,
             dictation_stream: None,
             toast: None,
             ui_settings: stored.ui.clone(),
