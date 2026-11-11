@@ -3,8 +3,11 @@ use eframe::egui;
 pub mod audio;
 pub mod components;
 pub mod config;
+pub mod keys;
 pub mod live;
+pub mod local_stt;
 pub mod models;
+pub mod provider_stt;
 pub mod templates;
 pub mod theme;
 
@@ -154,7 +157,7 @@ impl eframe::App for NotepadApp {
         self.enforce_min_window_size(ctx);
         self.update_window_title(ctx);
         self.handle_global_shortcuts(ctx);
-        // Audio files can be dropped anywhere; transcribe them into the document.
+        // Audio files can be dropped anywhere; transcribe them locally.
         self.handle_dropped_audio(ctx);
         self.poll_dictation(ctx);
         self.show_top_bar(ctx);

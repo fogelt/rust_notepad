@@ -1,3 +1,5 @@
 pub mod notepad;
 
-pub use notepad::{DictationEvent, DictationStream, NotepadApp, Toast};
+pub use notepad::{
+    DictationEvent, DictationSource, DictationStream, NotepadApp, SettingsTab, Toast,
+};

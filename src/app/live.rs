@@ -4,7 +4,7 @@
 //! finalized input transcriptions while the user is still speaking. A dedicated
 //! session thread owns the socket and the microphone so the UI stays responsive.
 
-use crate::app::audio::LiveAudio;
+use crate::app::audio::Microphone;
 use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -137,7 +137,7 @@ async fn run_session(
 
     wait_for_setup(&mut socket, tx).await?;
 
-    let mut audio = LiveAudio::start().map_err(|err| format!("Microphone error: {err}"))?;
+    let mut audio = Microphone::start().map_err(|err| format!("Microphone error: {err}"))?;
     send_json(
         &mut socket,
         &serde_json::json!({ "realtimeInput": { "activityStart": {} } }),
