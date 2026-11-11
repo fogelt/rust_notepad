@@ -67,6 +67,11 @@ category = "Productivity"
 
 before_packaging_command = "cargo build --release"
 
+# The Windows sherpa-onnx build links shared libraries; their DLLs are emitted
+# next to the binaries and must be installed beside the exe. The glob matches
+# nothing on macOS/Linux, where those runtimes are linked statically.
+resources = ["target/release/*.dll"]
+
 icons = [
     "assets/icon.ico",
     "assets/icon.png"
