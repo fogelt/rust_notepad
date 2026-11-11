@@ -30,6 +30,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Refresh sherpa-onnx prebuilt libraries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The cache can keep sherpa-onnx-sys' build fingerprint without the
+          # large prebuilt lib directory it downloaded, so the build script
+          # skips extraction and the linker cannot find the .lib files.
+          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
+          cargo clean -p sherpa-onnx-sys
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
