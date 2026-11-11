@@ -29,16 +29,16 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        if: runner.os != 'Windows'
 
-      - name: Refresh sherpa-onnx prebuilt libraries
+      # A restored target cache can claim sherpa-onnx-sys is built without the
+      # prebuilt library directory it downloaded, so the linker cannot find the
+      # .lib files. Windows builds start from a clean target; the registry cache
+      # still avoids re-downloading crates.
+      - uses: Swatinem/rust-cache@v2
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # The cache can keep sherpa-onnx-sys' build fingerprint without the
-          # large prebuilt lib directory it downloaded, so the build script
-          # skips extraction and the linker cannot find the .lib files.
-          Remove-Item -Recurse -Force target/sherpa-onnx-prebuilt -ErrorAction SilentlyContinue
-          cargo clean -p sherpa-onnx-sys
+        with:
+          cache-targets: false
 
       - name: Check formatting
         run: cargo fmt --all -- --check
