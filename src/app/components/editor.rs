@@ -8,7 +8,66 @@ use crate::app::theme::{
 use eframe::egui;
 use egui_commonmark::CommonMarkViewer;
 use egui_phosphor::regular as icons;
+use pulldown_cmark::{Options, Parser, html};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
+
+/// Stylesheet used by the experimental litehtml preview. Colors mirror the
+/// app's dark theme so converted Markdown and assistant HTML feel native.
+const HTML_STYLE: &str = r#"
+body {
+    background: #1c1d20;
+    color: #e4e4e7;
+    font-family: "Segoe UI", -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 18px 28px 28px 28px;
+}
+h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+    line-height: 1.25;
+    margin: 1.2em 0 0.5em 0;
+}
+h1 { font-size: 2.1em; border-bottom: 1px solid #3a3c44; padding-bottom: 0.3em; }
+h2 { font-size: 1.55em; border-bottom: 1px solid #3a3c44; padding-bottom: 0.25em; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1.05em; }
+p { margin: 0.8em 0; }
+a { color: #84aee0; text-decoration: none; }
+pre {
+    background: #15161a;
+    border: 1px solid #33353c;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+code {
+    background: #24252a;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+}
+pre code { background: transparent; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #3a3c44; padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: #24252a; color: #ffffff; }
+tbody tr:nth-child(even) { background: #212226; }
+blockquote {
+    border-left: 3px solid #4a78ad;
+    color: #b9bbc2;
+    margin: 1em 0;
+    padding: 0.2em 0 0.2em 14px;
+}
+img { max-width: 100%; }
+hr { border: 0; border-top: 1px solid #3a3c44; margin: 1.5em 0; }
+ul, ol { padding-left: 1.6em; }
+li { margin: 0.25em 0; }
+"#;
 
 /// Convert a filesystem path to a `file://` URI understood by
 /// `egui_extras::FileLoader` (handles Windows `C:\` -> `file:///C:/...`).
@@ -216,9 +275,17 @@ impl NotepadApp {
                 .max_width(max_preview_w)
                 .frame(frame)
                 .show(ctx, |ui| {
-                    if panel_header(ui, "Preview", "Hide preview").clicked() {
-                        self.tabs.preview = false;
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Preview").strong().size(14.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if crate::app::theme::header_close_button(ui, "Hide preview").clicked()
+                            {
+                                self.tabs.preview = false;
+                            }
+                            ui.toggle_value(&mut self.preview_html, "HTML")
+                                .on_hover_text("Render the document as styled HTML");
+                        });
+                    });
                     ui.separator();
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
@@ -339,6 +406,11 @@ impl NotepadApp {
     }
 
     fn show_preview_body(&mut self, ui: &mut egui::Ui, full_width: bool) {
+        if self.preview_html && !self.content.trim().is_empty() {
+            self.show_html_preview_body(ui);
+            return;
+        }
+
         ui.set_style(preview_style(ui, &self.ui_settings));
 
         // A centered reading column keeps long lines comfortable when the
@@ -464,6 +536,71 @@ impl NotepadApp {
                     });
                 });
             });
+    }
+
+    /// Render the current document through the HTML engine. Markdown is
+    /// converted with pulldown-cmark; full HTML documents are used directly.
+    fn show_html_preview_body(&mut self, ui: &mut egui::Ui) {
+        let mut hasher = DefaultHasher::new();
+        self.content.hash(&mut hasher);
+        self.file_path.hash(&mut hasher);
+        let source_hash = hasher.finish();
+
+        if self.html_source_cache.as_ref().map(|(hash, _)| *hash) != Some(source_hash) {
+            self.html_source_cache = Some((source_hash, self.html_document()));
+        }
+
+        let full_w = ui.available_width();
+        let content_w = full_w.clamp(160.0, PREVIEW_MAX_CONTENT_WIDTH);
+        let side = ((full_w - content_w) * 0.5).max(0.0);
+
+        ui.horizontal_top(|ui| {
+            ui.add_space(side);
+            ui.vertical(|ui| {
+                ui.set_width(content_w);
+                if self.html_preview.is_none() {
+                    self.html_preview =
+                        Some(crate::app::components::html_preview::HtmlPreview::new());
+                }
+                if let (Some(preview), Some((_, html))) =
+                    (&mut self.html_preview, &self.html_source_cache)
+                {
+                    preview.show(ui, html, source_hash, content_w);
+                }
+            });
+        });
+    }
+
+    fn html_document(&self) -> String {
+        let trimmed = self.content.trim_start();
+        if trimmed.starts_with("<!DOCTYPE")
+            || trimmed.starts_with("<!doctype")
+            || trimmed.starts_with("<html")
+        {
+            return litehtml::html::sanitize_html(&self.content);
+        }
+
+        let base_dir = self.file_path.as_ref().and_then(|p| {
+            if p.is_dir() {
+                Some(p.clone())
+            } else {
+                p.parent().map(|d| d.to_path_buf())
+            }
+        });
+        let with_images = resolve_image_uris(&self.content, base_dir.as_deref());
+
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_TABLES);
+        options.insert(Options::ENABLE_TASKLISTS);
+        options.insert(Options::ENABLE_STRIKETHROUGH);
+        options.insert(Options::ENABLE_FOOTNOTES);
+        let parser = Parser::new_ext(&with_images, options);
+        let mut body = String::new();
+        html::push_html(&mut body, parser);
+
+        format!(
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>{HTML_STYLE}</style></head><body>{body}</body></html>"
+        )
     }
 
     /// Load the bundled app mark once and reuse the texture.

@@ -70,6 +70,11 @@ pub struct NotepadApp {
     pub status_message: String,
     pub markdown_cache: CommonMarkCache,
     pub tabs: PanelTabs,
+    /// Render the preview through the HTML engine instead of CommonMark.
+    pub preview_html: bool,
+    pub html_preview: Option<crate::app::components::html_preview::HtmlPreview>,
+    /// Cached `(content hash, generated HTML)` for the HTML preview.
+    pub html_source_cache: Option<(u64, String)>,
     pub chat_input: String,
     pub chat_response: String,
     pub chat_busy: bool,
@@ -182,6 +187,9 @@ impl Default for NotepadApp {
             status_message: String::from("Ready"),
             markdown_cache: CommonMarkCache::default(),
             tabs: PanelTabs::default(),
+            preview_html: false,
+            html_preview: None,
+            html_source_cache: None,
             chat_input: String::new(),
             chat_response: String::new(),
             chat_busy: false,

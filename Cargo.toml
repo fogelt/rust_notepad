@@ -15,6 +15,8 @@ eframe = "0.27"
 rfd = "0.14"
 egui_commonmark = { version = "0.14", features = ["fetch", "svg"] }
 egui-phosphor = "0.5"
+litehtml = { version = "0.2", features = ["pixbuf", "html"] }
+pulldown-cmark = "0.10"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 tokio = { version = "1", features = ["rt", "net", "time", "macros"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
@@ -32,6 +34,7 @@ winresource = "0.1"
 # Only egui_commonmark's task-marker rendering differs from 0.14.0.
 [patch.crates-io]
 egui_commonmark = { path = "vendor/egui_commonmark" }
+litehtml-sys = { path = "vendor/litehtml-sys" }
 
 [profile.release]
 opt-level = 3
