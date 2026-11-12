@@ -2,9 +2,9 @@ use crate::app::NotepadApp;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::templates;
 use crate::app::theme::{
-    ACCENT, ACCENT_HOVERED, ACCENT_LINK, ACCENT_TEXT, BG_CODE, BORDER, MIN_EDITOR_WIDTH,
-    MIN_SIDE_PANEL_WIDTH, PREVIEW_MAX_CONTENT_WIDTH, PREVIEW_MIN_WIDTH, SURFACE, SURFACE_ACTIVE,
-    SURFACE_HOVERED, panel_frame, panel_header,
+    BG_CODE, BORDER, MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, PREVIEW_MAX_CONTENT_WIDTH,
+    PREVIEW_MIN_WIDTH, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED, accent, accent_hovered,
+    accent_link, accent_text, panel_frame, panel_header,
 };
 use eframe::egui;
 use egui::text::CCursorRange;
@@ -171,7 +171,7 @@ fn preview_style(ui: &egui::Ui, settings: &UiSettings) -> egui::Style {
         egui::FontId::monospace(body * 0.87),
     );
     style.spacing.item_spacing = egui::vec2(6.0, 7.0);
-    style.visuals.hyperlink_color = ACCENT_LINK;
+    style.visuals.hyperlink_color = accent_link();
     style.visuals.code_bg_color = BG_CODE;
     style.visuals.extreme_bg_color = BG_CODE;
     style.visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
@@ -188,7 +188,7 @@ fn icon_label(ui: &egui::Ui, icon: &str, label: &str) -> egui::text::LayoutJob {
         0.0,
         egui::text::TextFormat {
             font_id: egui::FontId::proportional(13.0),
-            color: ACCENT,
+            color: accent(),
             ..Default::default()
         },
     );
@@ -217,7 +217,7 @@ fn preview_tab(
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     let fill = if selected {
-        if hovered { ACCENT_HOVERED } else { ACCENT }
+        if hovered { accent_hovered() } else { accent() }
     } else if hovered {
         SURFACE_ACTIVE
     } else {
@@ -226,7 +226,7 @@ fn preview_tab(
     ui.painter().rect_filled(rect, rounding, fill);
 
     let color = if selected {
-        ACCENT_TEXT
+        accent_text()
     } else if hovered {
         egui::Color32::WHITE
     } else {
@@ -362,7 +362,7 @@ impl NotepadApp {
                     (icons::MICROPHONE, "Dictating")
                 };
                 egui::Frame::none()
-                    .stroke(egui::Stroke::new(1.5_f32, ACCENT))
+                    .stroke(egui::Stroke::new(1.5_f32, accent()))
                     .rounding(8.0)
                     .inner_margin(egui::Margin::same(8.0))
                     .show(ui, |ui| {
@@ -371,7 +371,7 @@ impl NotepadApp {
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     egui::Frame::none()
-                                        .fill(ACCENT)
+                                        .fill(accent())
                                         .rounding(4.0)
                                         .inner_margin(egui::Margin::symmetric(8.0, 3.0))
                                         .show(ui, |ui| {
@@ -381,7 +381,7 @@ impl NotepadApp {
                                                 ))
                                                 .size(11.0)
                                                 .strong()
-                                                .color(ACCENT_TEXT),
+                                                .color(accent_text()),
                                             );
                                         });
                                 },
@@ -482,7 +482,7 @@ impl NotepadApp {
                         ui.label(
                             egui::RichText::new("Or start from a template")
                                 .small()
-                                .color(ACCENT_LINK),
+                                .color(accent_link()),
                         );
                         ui.add_space(5.0);
 

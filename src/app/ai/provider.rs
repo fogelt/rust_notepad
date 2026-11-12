@@ -259,6 +259,19 @@ impl Provider {
         self.spec().models
     }
 
+    /// Branding color used when the accent follows the active provider.
+    /// Chosen to stay legible on the dark chrome.
+    pub fn accent_rgb(self) -> [u8; 3] {
+        match self {
+            Provider::Gemini => [138, 180, 248],
+            Provider::OpenAi => [52, 197, 155],
+            Provider::Anthropic => [221, 170, 136],
+            Provider::DeepSeek => [123, 143, 255],
+            // Punk yellow for custom OpenAI-compatible endpoints.
+            Provider::Custom => [255, 230, 0],
+        }
+    }
+
     /// Output token budget for a request. Visual reports need more room;
     /// Gemini and custom endpoints get the smaller caps.
     pub fn max_output_tokens(self, report: bool) -> u32 {
@@ -378,5 +391,16 @@ mod tests {
         );
         assert_eq!(Provider::Gemini.model_label("custom-model"), "custom-model");
         assert!(Provider::OpenAi.has_model(Provider::OpenAi.default_model()));
+    }
+
+    #[test]
+    fn providers_have_distinct_brand_colors() {
+        let mut seen = Vec::new();
+        for provider in Provider::ALL {
+            let rgb = provider.accent_rgb();
+            assert!(rgb.iter().any(|channel| *channel > 0));
+            assert!(!seen.contains(&rgb), "duplicate color for {provider:?}");
+            seen.push(rgb);
+        }
     }
 }

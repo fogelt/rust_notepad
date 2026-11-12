@@ -8,8 +8,8 @@ use crate::app::NotepadApp;
 use crate::app::ai::provider::Provider;
 use crate::app::ai::{prompt, report, text};
 use crate::app::theme::{
-    ACCENT, ACCENT_TEXT, ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER,
-    MIN_EDITOR_WIDTH, MIN_SIDE_PANEL_WIDTH, TEXT, panel_frame, panel_header,
+    ASSISTANT_DEFAULT_WIDTH, ASSISTANT_MIN_WIDTH, BG_ELEVATED, BORDER, MIN_EDITOR_WIDTH,
+    MIN_SIDE_PANEL_WIDTH, TEXT, accent, accent_text, panel_frame, panel_header,
 };
 use eframe::egui;
 use egui_phosphor::regular as icons;
@@ -350,8 +350,8 @@ impl NotepadApp {
                             } else {
                                 (
                                     format!("{} Send  ({send_shortcut})", icons::PAPER_PLANE_TILT),
-                                    ACCENT_TEXT,
-                                    ACCENT,
+                                    accent_text(),
+                                    accent(),
                                 )
                             };
                             let send = egui::Button::new(
@@ -388,7 +388,7 @@ impl NotepadApp {
                                     text_rect.left() + 7.0,
                                     response.rect.center().y,
                                 );
-                                egui::Spinner::new().size(16.0).color(ACCENT).paint_at(
+                                egui::Spinner::new().size(16.0).color(accent()).paint_at(
                                     ui,
                                     egui::Rect::from_center_size(
                                         spinner_center,

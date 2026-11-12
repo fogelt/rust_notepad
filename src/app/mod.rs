@@ -27,6 +27,22 @@ pub use models::NotepadApp;
 use theme::WINDOW_MIN_SIZE;
 
 impl NotepadApp {
+    /// Follow the active provider's branding color when the user enabled it,
+    /// otherwise use the user's own accent.
+    fn apply_accent(&mut self, ctx: &egui::Context) {
+        let color = if self.ui_settings.use_provider_color {
+            let [r, g, b] = self.chat_provider.accent_rgb();
+            egui::Color32::from_rgb(r, g, b)
+        } else {
+            let [r, g, b] = self.ui_settings.accent;
+            egui::Color32::from_rgb(r, g, b)
+        };
+        if theme::accent() != color {
+            theme::set_accent(color);
+            theme::apply(ctx);
+        }
+    }
+
     /// Grow the startup window to a comfortable fraction of the monitor,
     /// keeping it centered where the OS opened it. Runs once.
     fn apply_initial_window_size(&mut self, ctx: &egui::Context) {
@@ -121,6 +137,7 @@ impl NotepadApp {
 
 impl eframe::App for NotepadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.apply_accent(ctx);
         self.apply_initial_window_size(ctx);
         self.enforce_min_window_size(ctx);
         self.update_window_title(ctx);

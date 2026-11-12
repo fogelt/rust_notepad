@@ -1,21 +1,65 @@
 //! Shared UI theme.
 //!
 //! A small, calm palette is defined once here and applied globally in
-//! [`apply`]. The accent is a soft blue so the chrome stays quiet while
-//! interactive elements still stand out.
+//! [`apply`]. The accent defaults to a soft blue, but can follow the active
+//! provider's branding color when the user enables that setting.
 
 use eframe::egui;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-/// Calm blue accent used for selected tabs, primary buttons and progress.
-pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(74, 120, 173);
+/// Neutral light gray used as the custom accent until the user picks a color.
+pub const DEFAULT_ACCENT: egui::Color32 = egui::Color32::from_rgb(201, 201, 207);
+static ACCENT_RGB: AtomicU32 = AtomicU32::new(0xC9_C9_CF);
+
+/// Set the accent used by accent-colored chrome. Call [`apply`] afterwards to
+/// refresh egui's built-in visuals.
+pub fn set_accent(color: egui::Color32) {
+    let [r, g, b, _] = color.to_array();
+    ACCENT_RGB.store(
+        ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
+        Ordering::Relaxed,
+    );
+}
+
+/// Current accent color.
+pub fn accent() -> egui::Color32 {
+    let value = ACCENT_RGB.load(Ordering::Relaxed);
+    egui::Color32::from_rgb(
+        ((value >> 16) & 0xFF) as u8,
+        ((value >> 8) & 0xFF) as u8,
+        (value & 0xFF) as u8,
+    )
+}
+
+fn lighten(color: egui::Color32, amount: u8) -> egui::Color32 {
+    let add = |channel: u8| channel.saturating_add(amount);
+    egui::Color32::from_rgb(add(color.r()), add(color.g()), add(color.b()))
+}
+
 /// Lighter accent for hovered accent-colored controls.
-pub const ACCENT_HOVERED: egui::Color32 = egui::Color32::from_rgb(88, 136, 190);
+pub fn accent_hovered() -> egui::Color32 {
+    lighten(accent(), 16)
+}
+
 /// Readable accent-tinted color for links on the dark background.
-pub const ACCENT_LINK: egui::Color32 = egui::Color32::from_rgb(132, 174, 224);
+pub fn accent_link() -> egui::Color32 {
+    lighten(accent(), 52)
+}
+
+/// Text drawn on top of [`accent`] fills. Light brand colors get dark text.
+pub fn accent_text() -> egui::Color32 {
+    let color = accent();
+    let luminance =
+        0.2126 * color.r() as f32 + 0.7152 * color.g() as f32 + 0.0722 * color.b() as f32;
+    if luminance > 145.0 {
+        egui::Color32::from_rgb(18, 20, 24)
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
 /// Duration of the shared chevron flip animation, in seconds.
 pub const CHEVRON_ANIMATION_TIME: f32 = 0.16;
-/// Text drawn on top of [`ACCENT`] fills.
-pub const ACCENT_TEXT: egui::Color32 = egui::Color32::WHITE;
 
 /// Main panel background.
 pub const BG_PANEL: egui::Color32 = egui::Color32::from_rgb(28, 29, 32);
@@ -71,15 +115,15 @@ pub fn apply(ctx: &egui::Context) {
     visuals.extreme_bg_color = BG_INPUT;
     visuals.faint_bg_color = BG_FAINT;
     visuals.code_bg_color = BG_CODE;
-    visuals.hyperlink_color = ACCENT_LINK;
+    visuals.hyperlink_color = accent_link();
     visuals.window_stroke = egui::Stroke::new(1.0_f32, BORDER);
     visuals.window_rounding = egui::Rounding::same(8.0);
     visuals.menu_rounding = egui::Rounding::same(6.0);
-    visuals.selection.bg_fill = ACCENT;
+    visuals.selection.bg_fill = accent();
     // A zero-width stroke still supplies the selected-text color (white)
     // without drawing a border around selected labels/buttons.
-    visuals.selection.stroke = egui::Stroke::new(0.0_f32, ACCENT_TEXT);
-    visuals.text_cursor = egui::Stroke::new(1.0_f32, ACCENT);
+    visuals.selection.stroke = egui::Stroke::new(0.0_f32, accent_text());
+    visuals.text_cursor = egui::Stroke::new(1.0_f32, accent());
     visuals.error_fg_color = egui::Color32::from_rgb(230, 118, 118);
     visuals.warn_fg_color = egui::Color32::from_rgb(226, 178, 94);
     visuals.striped = true;
@@ -105,7 +149,7 @@ pub fn apply(ctx: &egui::Context) {
 
     widgets.active.bg_fill = SURFACE_ACTIVE;
     widgets.active.weak_bg_fill = SURFACE_ACTIVE;
-    widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
+    widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, accent());
     widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, egui::Color32::WHITE);
     widgets.active.rounding = egui::Rounding::same(6.0);
 
