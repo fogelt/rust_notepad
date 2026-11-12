@@ -177,6 +177,9 @@ The active provider and model are stored locally in
 
 Requires a recent stable Rust toolchain (1.87 or newer).
 
+The module layout and design rules are documented in
+[`docs/architecture.md`](docs/architecture.md).
+
 ### Run and check
 
 ```bash

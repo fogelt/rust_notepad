@@ -1,5 +1,5 @@
 use crate::app::NotepadApp;
-use crate::app::components::provider::Provider;
+use crate::app::ai::provider::Provider;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::local_stt;
 use crate::app::models::{DictationSource, SettingsTab};

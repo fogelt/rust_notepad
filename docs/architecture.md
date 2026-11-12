@@ -1,0 +1,81 @@
+# Architecture
+
+Rusty Notepad is a small egui/eframe desktop app. This document describes the
+module boundaries so changes stay local and the pure logic stays testable.
+
+## Binary crates
+
+| Crate | Role |
+| --- | --- |
+| `rust_notepad` (`src/main.rs`) | The desktop app. |
+| `rmd` (`src/bin/rmd.rs`) | Tiny console helper that forwards to `rmd_cli`. |
+
+Both crate roots use `#![forbid(unsafe_code)]`. The only `unsafe` in the
+workspace lives in the vendored litehtml FFI bindings (`vendor/litehtml`,
+`vendor/litehtml-sys`), which are kept behind their public safe APIs.
+
+## App layers
+
+```
+src/app/
+  ai/                  pure assistant infrastructure
+    mod.rs
+    provider.rs        provider metadata (labels, models, env vars)
+    prompt.rs          assistant + visual-report prompts
+    text.rs            TextBackend trait and provider transports
+    report.rs          HTML extraction, Commons photos, responsive cleanup
+  components/          egui views and widgets
+    ai_chat.rs         assistant panel + report orchestration
+    editor.rs          editor / preview split, Markdown preview
+    html_preview.rs    litehtml rasterizer, image cache, render worker
+    toolbar.rs         Markdown toolbar and dictation button
+    top_bar.rs         menu, tabs, settings tables
+    ...
+  dictation.rs         microphone/transcription state machine
+  models/              persisted app state
+  audio.rs             microphone capture and resampling
+  local_stt.rs         Whisper model catalog, download, inference
+  provider_stt.rs      Gemini Live / OpenAI transcription
+  live.rs              Gemini Live WebSocket client
+  config.rs            JSON settings (no API keys)
+  keys.rs              OS keychain access
+  theme.rs             colors, spacing, shared widgets
+```
+
+### Assistant (`app/ai`)
+
+- `prompt` and `report` are deterministic string transformations. They have no
+  `NotepadApp` dependency and are unit-tested directly.
+- `text` owns the `TextBackend` trait. Each provider is one implementation;
+  adding a provider does not touch request/response plumbing.
+- `components::ai_chat` only orchestrates: it moves results between channels
+  and app state, and renders the panel. It never builds HTTP requests itself.
+
+### Dictation (`app/dictation`)
+
+The streamed-edit logic (interim/final text, selection replacement, cursor
+restoration) lives together. `components::ai_chat` starts/stops sessions and
+polls the shared state machine; it does not know how a transcript is merged
+into the buffer.
+
+### Rendering (`components::html_preview`)
+
+Rendering runs on a background worker. The worker owns an `Arc<str>` of the
+HTML and returns `ColorImage` pixels; the UI thread only uploads textures and
+draws. The remote-image cache uses `Arc<Vec<u8>>` so cached bytes are shared
+instead of cloned.
+
+## Design rules
+
+- **Single responsibility**: pure transformations live in `ai/`; UI and app
+  state live in `components/`; persistence lives in `config`/`keys`.
+- **Open for extension, closed for modification**: provider behavior is
+  selected through the `TextBackend` trait. Providers are data (metadata) plus
+  one transport implementation.
+- **Errors at the edges**: provider/network failures become human-readable
+  strings only at the UI boundary (`friendly_*` helpers). Pure helpers return
+  `Option`/`Result` instead of panicking.
+- **No panics on user input**: UI paths use `let-else`/`Option` for missing
+  state. Tests may `unwrap`; production code does not.
+- **No global mutable state** except the intentionally shared remote-image
+  cache, which is guarded by a `Mutex` and `OnceLock`.

@@ -1,8 +1,10 @@
 use eframe::egui;
 
+pub mod ai;
 pub mod audio;
 pub mod components;
 pub mod config;
+pub mod dictation;
 pub mod keys;
 pub mod live;
 pub mod local_stt;

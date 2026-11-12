@@ -4,8 +4,9 @@
 //! cloud transcription endpoint. Used when the user chooses to transcribe with
 //! their provider instead of the local Whisper model.
 
+use crate::app::ai::http::check_response;
+use crate::app::ai::provider::Provider;
 use crate::app::audio::{Microphone, decode_audio_file};
-use crate::app::components::provider::Provider;
 use crate::app::live::{LIVE_MODEL, LiveEvent, LiveSession};
 use crate::app::local_stt::{dedupe_tail, sanitize_transcript};
 use crate::app::models::DictationEvent;
@@ -345,20 +346,6 @@ fn client() -> Result<reqwest::blocking::Client, String> {
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| format!("Request failed: {e}"))
-}
-
-fn check_response(
-    resp: reqwest::blocking::Response,
-    provider: &str,
-) -> Result<serde_json::Value, String> {
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let detail = resp.text().unwrap_or_default();
-        let short = detail.chars().take(300).collect::<String>();
-        return Err(format!("{provider} error {status}: {short}"));
-    }
-    resp.json()
-        .map_err(|e| format!("Bad response from {provider}: {e}"))
 }
 
 fn wav_bytes(pcm: &[u8]) -> Vec<u8> {
