@@ -758,7 +758,7 @@ impl NotepadApp {
             }
         }
 
-        if let Some(provider) = self.key_edit.filter(|provider| provider.allows_api_key()) {
+        if let Some(provider) = self.key_edit.filter(|provider| provider.requires_api_key()) {
             ui.add_space(4.0);
             ui.label(format!("{} API key", provider.label()));
             let mut save = false;
@@ -812,6 +812,45 @@ impl NotepadApp {
                 self.save_assistant_settings();
             }
             ui.weak("OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, vLLM).");
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("API key (optional)").strong());
+            let has_key = self.stored_keys.contains(&Provider::Custom);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.key_input)
+                    .password(true)
+                    .hint_text("Optional API key")
+                    .desired_width(f32::INFINITY),
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Save key").clicked() {
+                    let key = self.key_input.trim().to_string();
+                    if !key.is_empty() {
+                        match crate::app::keys::store(Provider::Custom, &key) {
+                            Ok(()) => {
+                                self.stored_keys.insert(Provider::Custom);
+                                self.key_input.clear();
+                                self.key_error = None;
+                                self.status_message =
+                                    String::from("Custom endpoint API key saved.");
+                            }
+                            Err(err) => self.key_error = Some(err),
+                        }
+                    }
+                }
+                if has_key && ui.button("Remove key").clicked() {
+                    match crate::app::keys::delete(Provider::Custom) {
+                        Ok(()) => {
+                            self.stored_keys.remove(&Provider::Custom);
+                            self.key_error = None;
+                            self.status_message = String::from("Custom endpoint API key removed.");
+                        }
+                        Err(err) => self.key_error = Some(err),
+                    }
+                }
+            });
+            if has_key {
+                ui.weak("A key is saved. Enter a new one above to replace it.");
+            }
         }
 
         ui.separator();
