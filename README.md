@@ -19,7 +19,8 @@ to rewrite or extend it.
 - **Autosave** once the document has a file name.
 - **`rmd` command** to open or create notes from any terminal.
 - **Optional AI assistant** that can rewrite or extend the document, with a
-  choice of Gemini, OpenAI, Anthropic, OpenRouter, or DeepSeek.
+  choice of Gemini, OpenAI, Anthropic, DeepSeek, or any OpenAI-compatible
+  endpoint.
 - **Offline dictation** — press the microphone and a local Whisper model types
   into the document as you speak. Dropped audio files are transcribed too.
 - **Native installers** for Windows, macOS (Apple Silicon and Intel), Debian/
@@ -107,16 +108,23 @@ writable). Use `rmd --help` for options.
 
 ## Assistant and dictation (optional)
 
-The assistant works with Google Gemini, OpenAI, Anthropic, OpenRouter, or
-DeepSeek.
+The assistant works with Google Gemini, OpenAI, Anthropic, DeepSeek, or a
+custom OpenAI-compatible endpoint (local or hosted).
 
 1. Open **Settings → Provider** in the top bar.
 2. Pick the active provider and model, or type any model ID the provider
-   supports, and add an API key for each provider you want to use (for example,
-   Gemini keys are available from
+   supports. For cloud providers, add an API key (for example, Gemini keys are
+   available from
    [Google AI Studio](https://aistudio.google.com/api-keys)).
 3. Type an instruction in the Assistant tab and press **Send** to rewrite or
    extend the document.
+
+For a custom endpoint, run an OpenAI-compatible server such as Ollama, LM
+Studio, llama.cpp, or vLLM, or point at a hosted gateway. Choose **Custom
+endpoint**, enter its URL (Ollama defaults to `http://localhost:11434/v1`) and
+the exact model name. The app appends `/chat/completions` when it is omitted. An
+API key is optional: leave it empty for a local server, or add one if the
+gateway requires it.
 
 API keys are stored in the operating system's credential store (Windows
 Credential Manager, macOS Keychain, or Secret Service on Linux), not in the
@@ -217,8 +225,9 @@ depends on `libasound2` at runtime.
 ### Notes
 
 - For local development, copy `.env_example` to `.env` and fill in the provider
-  keys and model overrides you need. Keys saved in the app take priority over
-  environment variables.
+  keys and model overrides you need (including `CUSTOM_LLM_ENDPOINT`,
+  `CUSTOM_LLM_MODEL`, and the optional `CUSTOM_LLM_API_KEY`). Keys saved in the
+  app take priority over environment variables.
 - `vendor/egui_commonmark` is upstream 0.14.0 with small preview rendering
   patches (task-list bullets, configurable line spacing, code-copy UX, and
   spacing after code blocks). See its `PATCH.md` before updating the dependency.

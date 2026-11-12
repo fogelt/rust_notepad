@@ -88,6 +88,7 @@ impl NotepadApp {
         cfg.model = self.chat_model.trim().to_string();
         cfg.dictation_model = self.dictation_model.clone();
         cfg.dictation_source = self.dictation_source.id().to_string();
+        cfg.custom_endpoint = self.custom_endpoint.trim().to_string();
         if let Err(err) = crate::app::config::save(&cfg) {
             self.report_error(err);
         }
@@ -105,8 +106,12 @@ impl NotepadApp {
     /// Provider, key, and model for a request, or report what is missing.
     fn assistant_credentials(&mut self) -> Option<(Provider, String, String)> {
         let api_key = self.api_key();
-        if api_key.is_empty() {
+        if self.chat_provider.requires_api_key() && api_key.is_empty() {
             self.report_error("No API key: add one in Settings > Provider.");
+            return None;
+        }
+        if self.chat_provider.uses_custom_endpoint() && self.custom_endpoint.trim().is_empty() {
+            self.report_error("Set a custom endpoint URL in Settings > Provider.");
             return None;
         }
         let model = self.chat_model.trim().to_string();
@@ -128,20 +133,21 @@ impl NotepadApp {
         };
         let prompt = prompt::build_prompt(&instruction, &self.content);
         let (tx, rx) = mpsc::channel();
-        // Reasoning models spend part of the budget before writing, so give
-        // them a little more room than Gemini needs.
-        let max_tokens = if provider == Provider::Gemini {
-            2048
-        } else {
-            4096
-        };
+        let custom_endpoint = self.custom_endpoint.clone();
+        let max_tokens = provider.max_output_tokens(false);
         self.chat_rx = Some(rx);
         self.chat_busy = true;
         self.chat_input.clear();
         self.status_message = format!("Asking {}…", provider.label());
         std::thread::spawn(move || {
             let _ = tx.send(text::generate_text(
-                provider, &prompt, &api_key, &model, max_tokens, 0.7,
+                provider,
+                &prompt,
+                &api_key,
+                &model,
+                max_tokens,
+                0.7,
+                Some(&custom_endpoint),
             ));
         });
     }
@@ -163,25 +169,30 @@ impl NotepadApp {
         let prompt = prompt::build_html_design_prompt(&self.content);
         let (tx, rx) = mpsc::channel();
         let document = self.content.clone();
-        let max_tokens = if provider == Provider::Gemini {
-            8192
-        } else {
-            16384
-        };
+        let custom_endpoint = self.custom_endpoint.clone();
+        let max_tokens = provider.max_output_tokens(true);
         self.html_rx = Some(rx);
         self.html_busy = true;
         self.html_error = None;
         self.html_started = Some(std::time::Instant::now());
         self.status_message = String::from("Creating a visual report...");
         std::thread::spawn(move || {
-            let result = text::generate_text(provider, &prompt, &api_key, &model, max_tokens, 0.4)
-                .and_then(|raw| {
-                    let html = report::extract_html_document(&raw)?;
-                    Ok(report::inject_fallback_image(
-                        &report::resolve_commons_images(&html),
-                        &document,
-                    ))
-                });
+            let result = text::generate_text(
+                provider,
+                &prompt,
+                &api_key,
+                &model,
+                max_tokens,
+                0.4,
+                Some(&custom_endpoint),
+            )
+            .and_then(|raw| {
+                let html = report::extract_html_document(&raw)?;
+                Ok(report::inject_fallback_image(
+                    &report::resolve_commons_images(&html),
+                    &document,
+                ))
+            });
             let _ = tx.send(result);
         });
     }
