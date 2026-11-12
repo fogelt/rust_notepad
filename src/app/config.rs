@@ -36,6 +36,11 @@ fn default_preview_line_spacing() -> f32 {
     22.5
 }
 
+fn default_accent() -> [u8; 3] {
+    let color = crate::app::theme::DEFAULT_ACCENT;
+    [color.r(), color.g(), color.b()]
+}
+
 /// Appearance settings, all optional so older config files keep loading.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiSettings {
@@ -54,6 +59,9 @@ pub struct UiSettings {
     /// Follow the active provider's branding color for accent chrome.
     #[serde(default = "default_true")]
     pub use_provider_color: bool,
+    /// Accent used when provider colors are turned off, as sRGB.
+    #[serde(default = "default_accent")]
+    pub accent: [u8; 3],
 }
 
 impl Default for UiSettings {
@@ -66,6 +74,7 @@ impl Default for UiSettings {
             preview_font_size: default_preview_font_size(),
             preview_line_spacing: default_preview_line_spacing(),
             use_provider_color: true,
+            accent: default_accent(),
         }
     }
 }
@@ -187,6 +196,7 @@ mod tests {
                 preview_font_size: 18.0,
                 preview_line_spacing: 24.0,
                 use_provider_color: true,
+                accent: [90, 160, 140],
             },
         };
         let json = serde_json::to_string(&cfg).unwrap();

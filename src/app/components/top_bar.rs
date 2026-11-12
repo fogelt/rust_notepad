@@ -595,16 +595,14 @@ impl NotepadApp {
         if toggle.changed() {
             self.save_ui_settings();
         }
-        let [r, g, b] = self.chat_provider.accent_rgb();
-        let color = egui::Color32::from_rgb(r, g, b);
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-            ui.painter()
-                .rect_filled(rect, egui::Rounding::same(3.0), color);
-            ui.weak(format!("{} brand color", self.chat_provider.label()));
-        });
         if !self.ui_settings.use_provider_color {
-            ui.weak("Using the default blue accent.");
+            ui.horizontal(|ui| {
+                ui.label("Custom color");
+                let picker = ui.color_edit_button_srgb(&mut self.ui_settings.accent);
+                if picker.changed() {
+                    self.save_ui_settings();
+                }
+            });
         }
 
         ui.separator();
@@ -737,7 +735,7 @@ impl NotepadApp {
                                 });
                             }
                         });
-                        if provider.requires_api_key() {
+                        if provider.allows_api_key() {
                             actions_rect = actions.rect;
                         }
                     });
@@ -771,7 +769,9 @@ impl NotepadApp {
                     .on_hover_text(format!("Use {}", provider.label()));
                 if response.clicked() && !active {
                     self.chat_provider = provider;
-                    if !provider.has_model(&self.chat_model) {
+                    // Free-text endpoints (custom) have no curated list, so
+                    // keep whatever model the user typed instead of clearing it.
+                    if !provider.models().is_empty() && !provider.has_model(&self.chat_model) {
                         self.chat_model = provider.default_model().to_string();
                     }
                     self.key_edit = None;
@@ -781,7 +781,7 @@ impl NotepadApp {
             }
         }
 
-        if let Some(provider) = self.key_edit.filter(|provider| provider.requires_api_key()) {
+        if let Some(provider) = self.key_edit.filter(|provider| provider.allows_api_key()) {
             ui.add_space(4.0);
             ui.label(format!("{} API key", provider.label()));
             let mut save = false;
@@ -835,45 +835,6 @@ impl NotepadApp {
                 self.save_assistant_settings();
             }
             ui.weak("OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, vLLM).");
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new("API key (optional)").strong());
-            let has_key = self.stored_keys.contains(&Provider::Custom);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.key_input)
-                    .password(true)
-                    .hint_text("Optional API key")
-                    .desired_width(f32::INFINITY),
-            );
-            ui.horizontal(|ui| {
-                if ui.button("Save key").clicked() {
-                    let key = self.key_input.trim().to_string();
-                    if !key.is_empty() {
-                        match crate::app::keys::store(Provider::Custom, &key) {
-                            Ok(()) => {
-                                self.stored_keys.insert(Provider::Custom);
-                                self.key_input.clear();
-                                self.key_error = None;
-                                self.status_message =
-                                    String::from("Custom endpoint API key saved.");
-                            }
-                            Err(err) => self.key_error = Some(err),
-                        }
-                    }
-                }
-                if has_key && ui.button("Remove key").clicked() {
-                    match crate::app::keys::delete(Provider::Custom) {
-                        Ok(()) => {
-                            self.stored_keys.remove(&Provider::Custom);
-                            self.key_error = None;
-                            self.status_message = String::from("Custom endpoint API key removed.");
-                        }
-                        Err(err) => self.key_error = Some(err),
-                    }
-                }
-            });
-            if has_key {
-                ui.weak("A key is saved. Enter a new one above to replace it.");
-            }
         }
 
         ui.separator();
