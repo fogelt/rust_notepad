@@ -7,20 +7,18 @@
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-/// Vivid punk yellow used as the custom accent until the user picks a color.
-pub const PUNK_YELLOW: egui::Color32 = egui::Color32::from_rgb(255, 230, 0);
-/// Soft rainbow stops used when the active provider asks for a gradient. The
-/// first color is repeated at the end so neighbouring tabs join seamlessly.
-const RAINBOW: [egui::Color32; 7] = [
-    egui::Color32::from_rgb(255, 154, 162),
-    egui::Color32::from_rgb(255, 176, 124),
-    egui::Color32::from_rgb(253, 253, 150),
-    egui::Color32::from_rgb(168, 230, 163),
-    egui::Color32::from_rgb(160, 196, 255),
-    egui::Color32::from_rgb(205, 164, 255),
-    egui::Color32::from_rgb(255, 154, 162),
+/// Neutral light gray used as the custom accent until the user picks a color.
+pub const DEFAULT_ACCENT: egui::Color32 = egui::Color32::from_rgb(201, 201, 207);
+/// Gemini's aurora: green, blue, red and yellow. The first color is repeated
+/// at the end so neighbouring tabs join seamlessly.
+const RAINBOW: [egui::Color32; 5] = [
+    egui::Color32::from_rgb(129, 201, 149),
+    egui::Color32::from_rgb(138, 180, 248),
+    egui::Color32::from_rgb(242, 139, 130),
+    egui::Color32::from_rgb(253, 214, 99),
+    egui::Color32::from_rgb(129, 201, 149),
 ];
-static ACCENT_RGB: AtomicU32 = AtomicU32::new(0xFF_E6_00);
+static ACCENT_RGB: AtomicU32 = AtomicU32::new(0xC9_C9_CF);
 static ACCENT_GRADIENT: AtomicBool = AtomicBool::new(false);
 
 /// Set the accent used by accent-colored chrome. Call [`apply`] afterwards to
@@ -99,18 +97,41 @@ fn gradient_color(t: f32, hovered: bool) -> egui::Color32 {
     if hovered { lighten(color, 12) } else { color }
 }
 
+fn corner_radius(radius: f32, rect: egui::Rect) -> f32 {
+    radius
+        .min(rect.width() / 2.0)
+        .min(rect.height() / 2.0)
+        .max(0.0)
+}
+
 /// Vertical extent of a rounded rectangle at `x`, used to clip the gradient
-/// columns to the rounded corners.
-fn rounded_span(rect: egui::Rect, radius: f32, x: f32) -> (f32, f32) {
-    let dx = if x < rect.left() + radius {
-        rect.left() + radius - x
-    } else if x > rect.right() - radius {
-        x - (rect.right() - radius)
+/// columns to the rounded corners. Corners are handled independently because
+/// segmented controls mix rounded outer corners with square inner ones.
+fn rounded_span(rect: egui::Rect, rounding: egui::Rounding, x: f32) -> (f32, f32) {
+    let nw = corner_radius(rounding.nw, rect);
+    let ne = corner_radius(rounding.ne, rect);
+    let sw = corner_radius(rounding.sw, rect);
+    let se = corner_radius(rounding.se, rect);
+
+    let top = if x < rect.left() + nw {
+        let dx = rect.left() + nw - x;
+        rect.top() + nw - (nw * nw - dx * dx).max(0.0).sqrt()
+    } else if x > rect.right() - ne {
+        let dx = x - (rect.right() - ne);
+        rect.top() + ne - (ne * ne - dx * dx).max(0.0).sqrt()
     } else {
-        0.0
+        rect.top()
     };
-    let dy = (radius * radius - dx * dx).max(0.0).sqrt();
-    (rect.top() + radius - dy, rect.bottom() - radius + dy)
+    let bottom = if x < rect.left() + sw {
+        let dx = rect.left() + sw - x;
+        rect.bottom() - sw + (sw * sw - dx * dx).max(0.0).sqrt()
+    } else if x > rect.right() - se {
+        let dx = x - (rect.right() - se);
+        rect.bottom() - se + (se * se - dx * dx).max(0.0).sqrt()
+    } else {
+        rect.bottom()
+    };
+    (top, bottom)
 }
 
 /// Paint an accent fill, either as a solid color or as the provider's rainbow
@@ -121,25 +142,29 @@ pub fn paint_accent_fill(
     rounding: egui::Rounding,
     hovered: bool,
 ) {
+    paint_accent_fill_alpha(painter, rect, rounding, hovered, 1.0);
+}
+
+/// Like [`paint_accent_fill`], with `alpha` for disabled controls.
+pub fn paint_accent_fill_alpha(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    rounding: egui::Rounding,
+    hovered: bool,
+    alpha: f32,
+) {
     if !accent_is_gradient() {
-        painter.rect_filled(
-            rect,
-            rounding,
-            if hovered { accent_hovered() } else { accent() },
-        );
+        let color = if hovered { accent_hovered() } else { accent() };
+        painter.rect_filled(rect, rounding, color.gamma_multiply(alpha));
         return;
     }
 
-    let radius = rounding
-        .nw
-        .min(rounding.ne)
-        .min(rounding.sw)
-        .min(rounding.se)
-        .min(rect.width() / 2.0)
-        .min(rect.height() / 2.0)
-        .max(0.0);
     // Soft edge for the rounded corners, hidden under the gradient itself.
-    painter.rect_filled(rect, rounding, gradient_color(0.5, hovered));
+    painter.rect_filled(
+        rect,
+        rounding,
+        gradient_color(0.5, hovered).gamma_multiply(alpha),
+    );
 
     // Narrow columns keep interpolation between neighbouring gradient
     // positions, so the sRGB/linear conversion does not desaturate the hues.
@@ -149,10 +174,10 @@ pub fn paint_accent_fill(
     for i in 0..columns {
         let x0 = rect.left() + width * i as f32 / columns as f32;
         let x1 = rect.left() + width * (i + 1) as f32 / columns as f32;
-        let (top0, bottom0) = rounded_span(rect, radius, x0);
-        let (top1, bottom1) = rounded_span(rect, radius, x1);
-        let color0 = gradient_color((x0 - rect.left()) / width, hovered);
-        let color1 = gradient_color((x1 - rect.left()) / width, hovered);
+        let (top0, bottom0) = rounded_span(rect, rounding, x0);
+        let (top1, bottom1) = rounded_span(rect, rounding, x1);
+        let color0 = gradient_color((x0 - rect.left()) / width, hovered).gamma_multiply(alpha);
+        let color1 = gradient_color((x1 - rect.left()) / width, hovered).gamma_multiply(alpha);
         let base = mesh.vertices.len() as u32;
         for (pos, color) in [
             (egui::pos2(x0, top0), color0),

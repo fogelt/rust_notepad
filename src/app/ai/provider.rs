@@ -267,7 +267,8 @@ impl Provider {
             Provider::OpenAi => [52, 197, 155],
             Provider::Anthropic => [221, 170, 136],
             Provider::DeepSeek => [123, 143, 255],
-            Provider::Custom => [132, 174, 224],
+            // Punk yellow for custom OpenAI-compatible endpoints.
+            Provider::Custom => [255, 230, 0],
         }
     }
 

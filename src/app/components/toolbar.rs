@@ -1,5 +1,7 @@
 use crate::app::NotepadApp;
-use crate::app::theme::{BORDER, SURFACE, accent, accent_hovered, accent_text};
+use crate::app::theme::{
+    BORDER, SURFACE, accent, accent_hovered, accent_text, paint_accent_fill_alpha,
+};
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -72,15 +74,48 @@ fn toolbar_icon(ui: &mut egui::Ui, icon: &str, hover: &str) -> egui::Response {
     .on_hover_text(hover)
 }
 
-/// Blend two opaque colors.
-fn mix_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
-    let t = t.clamp(0.0, 1.0);
-    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    egui::Color32::from_rgb(
-        channel(a.r(), b.r()),
-        channel(a.g(), b.g()),
-        channel(a.b(), b.b()),
-    )
+/// Accent-filled icon button that honours the provider gradient, matching the
+/// dictation button's shape.
+fn accent_icon_button(
+    ui: &mut egui::Ui,
+    icon: &str,
+    enabled: bool,
+    size: egui::Vec2,
+    hover: &str,
+) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    let hovered = enabled && response.hovered();
+    let alpha = if enabled { 1.0 } else { 0.4 };
+    paint_accent_fill_alpha(
+        ui.painter(),
+        rect,
+        egui::Rounding::same(5.0),
+        hovered,
+        alpha,
+    );
+    let color = if enabled {
+        accent_text()
+    } else {
+        accent_text().gamma_multiply(0.55)
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::proportional(16.0),
+        color,
+    );
+    let response = response.on_hover_text(hover);
+    if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    }
 }
 
 /// Accent-filled dictation button. `icon` is the glyph to show, or `None` for
@@ -110,15 +145,8 @@ fn dictation_button(
         0.0
     };
 
-    let fill = if !interactive && !pulse {
-        accent().gamma_multiply(0.4)
-    } else if response.hovered() && interactive {
-        accent_hovered()
-    } else if pulse {
-        mix_color(accent(), accent_hovered(), 0.1 + 0.35 * wave)
-    } else {
-        accent()
-    };
+    let hovered = pulse && wave > 0.2 || response.hovered() && interactive;
+    let alpha = if !interactive && !pulse { 0.4 } else { 1.0 };
 
     if pulse {
         let ring = rect.expand(1.0 + 2.5 * wave);
@@ -136,7 +164,13 @@ fn dictation_button(
         ui.ctx().request_repaint();
     }
 
-    ui.painter().rect_filled(rect, 5.0, fill);
+    paint_accent_fill_alpha(
+        ui.painter(),
+        rect,
+        egui::Rounding::same(5.0),
+        hovered,
+        alpha,
+    );
 
     match icon {
         Some(icon) => {
@@ -634,16 +668,13 @@ impl NotepadApp {
                     let enabled =
                         !self.html_busy && !self.chat_busy && !self.content.trim().is_empty();
                     let icon = if self.html_busy { "" } else { icons::SPARKLE };
-                    let response = ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::new(
-                                egui::RichText::new(icon).size(16.0).color(accent_text()),
-                            )
-                            .fill(accent())
-                            .min_size(egui::vec2(30.0, 28.0)),
-                        )
-                        .on_hover_text("Create a visual report from this document");
+                    let response = accent_icon_button(
+                        ui,
+                        icon,
+                        enabled,
+                        egui::vec2(32.0, 28.0),
+                        "Create a visual report from this document",
+                    );
                     if self.html_busy {
                         egui::Spinner::new()
                             .size(14.0)

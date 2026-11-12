@@ -37,7 +37,7 @@ fn default_preview_line_spacing() -> f32 {
 }
 
 fn default_accent() -> [u8; 3] {
-    let color = crate::app::theme::PUNK_YELLOW;
+    let color = crate::app::theme::DEFAULT_ACCENT;
     [color.r(), color.g(), color.b()]
 }
 
