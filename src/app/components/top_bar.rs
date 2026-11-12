@@ -6,7 +6,7 @@ use crate::app::models::{DictationSource, SettingsTab};
 use crate::app::provider_stt;
 use crate::app::theme::{
     BG_ELEVATED, BORDER_STRONG, CHEVRON_ANIMATION_TIME, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
-    accent, accent_hovered, accent_text, draw_chevron,
+    accent, accent_text, draw_chevron, paint_accent_fill,
 };
 use eframe::egui;
 use egui_phosphor::regular as icons;
@@ -33,14 +33,16 @@ fn view_tab(
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
 
-    let fill = if *selected {
-        if hovered { accent_hovered() } else { accent() }
-    } else if hovered {
-        SURFACE_ACTIVE
+    if *selected {
+        paint_accent_fill(ui.painter(), rect, rounding, hovered);
     } else {
-        SURFACE_HOVERED
-    };
-    ui.painter().rect_filled(rect, rounding, fill);
+        let fill = if hovered {
+            SURFACE_ACTIVE
+        } else {
+            SURFACE_HOVERED
+        };
+        ui.painter().rect_filled(rect, rounding, fill);
+    }
 
     let text_color = if *selected {
         accent_text()
@@ -77,14 +79,16 @@ fn settings_tab_button(
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
-    let fill = if selected {
-        if hovered { accent_hovered() } else { accent() }
-    } else if hovered {
-        SURFACE_ACTIVE
+    if selected {
+        paint_accent_fill(ui.painter(), rect, rounding, hovered);
     } else {
-        SURFACE_HOVERED
-    };
-    ui.painter().rect_filled(rect, rounding, fill);
+        let fill = if hovered {
+            SURFACE_ACTIVE
+        } else {
+            SURFACE_HOVERED
+        };
+        ui.painter().rect_filled(rect, rounding, fill);
+    }
     let color = if selected {
         accent_text()
     } else if hovered {

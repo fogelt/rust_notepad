@@ -30,6 +30,7 @@ impl NotepadApp {
     /// Follow the active provider's branding color when the user enabled it,
     /// otherwise use the user's own accent.
     fn apply_accent(&mut self, ctx: &egui::Context) {
+        let gradient = self.ui_settings.use_provider_color && self.chat_provider.accent_gradient();
         let color = if self.ui_settings.use_provider_color {
             let [r, g, b] = self.chat_provider.accent_rgb();
             egui::Color32::from_rgb(r, g, b)
@@ -37,8 +38,12 @@ impl NotepadApp {
             let [r, g, b] = self.ui_settings.accent;
             egui::Color32::from_rgb(r, g, b)
         };
-        if theme::accent() != color {
-            theme::set_accent(color);
+        if theme::accent() != color || theme::accent_is_gradient() != gradient {
+            if gradient {
+                theme::set_accent_gradient(color);
+            } else {
+                theme::set_accent(color);
+            }
             theme::apply(ctx);
         }
     }

@@ -5,12 +5,23 @@
 //! provider's branding color when the user enables that setting.
 
 use eframe::egui;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-/// Default calm blue accent used for selected tabs, primary buttons and
-/// progress.
-pub const DEFAULT_ACCENT: egui::Color32 = egui::Color32::from_rgb(74, 120, 173);
-static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x4A_78_AD);
+/// Vivid punk yellow used as the custom accent until the user picks a color.
+pub const PUNK_YELLOW: egui::Color32 = egui::Color32::from_rgb(255, 230, 0);
+/// Soft rainbow stops used when the active provider asks for a gradient. The
+/// first color is repeated at the end so neighbouring tabs join seamlessly.
+const RAINBOW: [egui::Color32; 7] = [
+    egui::Color32::from_rgb(255, 154, 162),
+    egui::Color32::from_rgb(255, 176, 124),
+    egui::Color32::from_rgb(253, 253, 150),
+    egui::Color32::from_rgb(168, 230, 163),
+    egui::Color32::from_rgb(160, 196, 255),
+    egui::Color32::from_rgb(205, 164, 255),
+    egui::Color32::from_rgb(255, 154, 162),
+];
+static ACCENT_RGB: AtomicU32 = AtomicU32::new(0xFF_E6_00);
+static ACCENT_GRADIENT: AtomicBool = AtomicBool::new(false);
 
 /// Set the accent used by accent-colored chrome. Call [`apply`] afterwards to
 /// refresh egui's built-in visuals.
@@ -20,6 +31,18 @@ pub fn set_accent(color: egui::Color32) {
         ((r as u32) << 16) | ((g as u32) << 8) | b as u32,
         Ordering::Relaxed,
     );
+    ACCENT_GRADIENT.store(false, Ordering::Relaxed);
+}
+
+/// Set a solid base accent that accent *fills* render as a rainbow gradient.
+pub fn set_accent_gradient(base: egui::Color32) {
+    set_accent(base);
+    ACCENT_GRADIENT.store(true, Ordering::Relaxed);
+}
+
+/// Whether accent fills are currently drawn as a rainbow gradient.
+pub fn accent_is_gradient() -> bool {
+    ACCENT_GRADIENT.load(Ordering::Relaxed)
 }
 
 /// Current accent color.
@@ -59,6 +82,95 @@ pub fn accent_text() -> egui::Color32 {
     }
 }
 
+fn mix(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let channel = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    egui::Color32::from_rgb(
+        channel(a.r(), b.r()),
+        channel(a.g(), b.g()),
+        channel(a.b(), b.b()),
+    )
+}
+
+fn gradient_color(t: f32, hovered: bool) -> egui::Color32 {
+    let last = (RAINBOW.len() - 1) as f32;
+    let pos = (t.clamp(0.0, 1.0) * last).min(last - 0.001);
+    let index = pos.floor() as usize;
+    let color = mix(RAINBOW[index], RAINBOW[index + 1], pos - index as f32);
+    if hovered { lighten(color, 12) } else { color }
+}
+
+/// Vertical extent of a rounded rectangle at `x`, used to clip the gradient
+/// columns to the rounded corners.
+fn rounded_span(rect: egui::Rect, radius: f32, x: f32) -> (f32, f32) {
+    let dx = if x < rect.left() + radius {
+        rect.left() + radius - x
+    } else if x > rect.right() - radius {
+        x - (rect.right() - radius)
+    } else {
+        0.0
+    };
+    let dy = (radius * radius - dx * dx).max(0.0).sqrt();
+    (rect.top() + radius - dy, rect.bottom() - radius + dy)
+}
+
+/// Paint an accent fill, either as a solid color or as the provider's rainbow
+/// gradient.
+pub fn paint_accent_fill(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    rounding: egui::Rounding,
+    hovered: bool,
+) {
+    if !accent_is_gradient() {
+        painter.rect_filled(
+            rect,
+            rounding,
+            if hovered { accent_hovered() } else { accent() },
+        );
+        return;
+    }
+
+    let radius = rounding
+        .nw
+        .min(rounding.ne)
+        .min(rounding.sw)
+        .min(rounding.se)
+        .min(rect.width() / 2.0)
+        .min(rect.height() / 2.0)
+        .max(0.0);
+    // Soft edge for the rounded corners, hidden under the gradient itself.
+    painter.rect_filled(rect, rounding, gradient_color(0.5, hovered));
+
+    // Narrow columns keep interpolation between neighbouring gradient
+    // positions, so the sRGB/linear conversion does not desaturate the hues.
+    let columns = 64;
+    let width = rect.width().max(1.0);
+    let mut mesh = egui::Mesh::default();
+    for i in 0..columns {
+        let x0 = rect.left() + width * i as f32 / columns as f32;
+        let x1 = rect.left() + width * (i + 1) as f32 / columns as f32;
+        let (top0, bottom0) = rounded_span(rect, radius, x0);
+        let (top1, bottom1) = rounded_span(rect, radius, x1);
+        let color0 = gradient_color((x0 - rect.left()) / width, hovered);
+        let color1 = gradient_color((x1 - rect.left()) / width, hovered);
+        let base = mesh.vertices.len() as u32;
+        for (pos, color) in [
+            (egui::pos2(x0, top0), color0),
+            (egui::pos2(x1, top1), color1),
+            (egui::pos2(x1, bottom1), color1),
+            (egui::pos2(x0, bottom0), color0),
+        ] {
+            mesh.vertices.push(egui::epaint::Vertex {
+                pos,
+                uv: egui::epaint::WHITE_UV,
+                color,
+            });
+        }
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
+    }
+    painter.add(egui::Shape::mesh(mesh));
+}
 /// Duration of the shared chevron flip animation, in seconds.
 pub const CHEVRON_ANIMATION_TIME: f32 = 0.16;
 

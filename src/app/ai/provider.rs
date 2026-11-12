@@ -271,6 +271,11 @@ impl Provider {
         }
     }
 
+    /// Whether accent fills render as a rainbow gradient for this provider.
+    pub fn accent_gradient(self) -> bool {
+        matches!(self, Provider::Gemini)
+    }
+
     /// Output token budget for a request. Visual reports need more room;
     /// Gemini and custom endpoints get the smaller caps.
     pub fn max_output_tokens(self, report: bool) -> u32 {
@@ -400,6 +405,17 @@ mod tests {
             assert!(rgb.iter().any(|channel| *channel > 0));
             assert!(!seen.contains(&rgb), "duplicate color for {provider:?}");
             seen.push(rgb);
+        }
+    }
+
+    #[test]
+    fn only_gemini_uses_a_gradient_accent() {
+        for provider in Provider::ALL {
+            assert_eq!(
+                provider.accent_gradient(),
+                provider == Provider::Gemini,
+                "unexpected gradient for {provider:?}"
+            );
         }
     }
 }
