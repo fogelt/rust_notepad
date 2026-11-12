@@ -1,5 +1,5 @@
 use crate::app::NotepadApp;
-use crate::app::components::provider::Provider;
+use crate::app::ai::provider::Provider;
 use crate::app::config::{EditorFont, UiSettings};
 use crate::app::local_stt;
 use crate::app::models::{DictationSource, SettingsTab};
@@ -340,7 +340,7 @@ impl NotepadApp {
                                             ui,
                                             &mut self.tabs.assistant,
                                             "Assistant",
-                                            "Toggle the Gemini assistant panel",
+                                            "Toggle the assistant panel",
                                             egui::Rounding {
                                                 nw: 7.0,
                                                 sw: 7.0,
@@ -421,6 +421,11 @@ impl NotepadApp {
             SettingsTab::Appearance => 260.0,
             SettingsTab::Provider | SettingsTab::Dictation => 470.0,
         };
+        // Read this before building the menu: a ComboBox closes its popup while
+        // handling the click, so checking afterwards reports it as closed and
+        // treats the click as outside the settings menu.
+        let another_popup_open = ui.ctx().memory(|m| m.any_popup_open());
+
         let area = egui::Area::new(egui::Id::new("settings_menu_popup"))
             .order(egui::Order::Foreground)
             .fixed_pos(position)
@@ -437,13 +442,12 @@ impl NotepadApp {
 
         let popup_rect = area.response.rect;
         let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
-        // ComboBox popups are separate areas; don't treat their clicks as
-        // outside clicks.
-        let another_popup_open = ui.ctx().memory(|m| m.any_popup_open());
+        // Clicks in a ComboBox popup are children of this menu, not outside it.
         let clicked_outside = !another_popup_open
             && ui.ctx().input(|i| i.pointer.any_click())
             && pointer.is_some_and(|pos| !popup_rect.contains(pos) && !button_rect.contains(pos));
-        if clicked_outside || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        let escape = !another_popup_open && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape));
+        if clicked_outside || escape {
             self.settings_menu_open = false;
         }
     }
@@ -783,57 +787,66 @@ impl NotepadApp {
         ui.separator();
         ui.label(egui::RichText::new("Model").strong());
         let models = self.chat_provider.models();
-        if models.is_empty() {
+        let mut model_changed = false;
+        let preset_width = if models.is_empty() { 0.0 } else { 96.0 };
+        let field_width = (ui.available_width()
+            - if models.is_empty() {
+                0.0
+            } else {
+                preset_width + 6.0
+            })
+        .max(120.0);
+        ui.horizontal(|ui| {
             if ui
-                .add(
-                    egui::TextEdit::singleline(&mut self.chat_model)
-                        .hint_text("Model ID, e.g. openai/gpt-4o-mini")
-                        .desired_width(f32::INFINITY),
+                .add_sized(
+                    [field_width, 24.0],
+                    egui::TextEdit::singleline(&mut self.chat_model).hint_text("Model ID"),
                 )
                 .changed()
             {
-                self.save_assistant_settings();
+                model_changed = true;
             }
-        } else {
-            let current = self.chat_model.clone();
-            let selected = self.chat_provider.model_label(&self.chat_model);
-            egui::ComboBox::from_id_source("settings_model")
-                .width(ui.available_width())
-                .selected_text(selected)
-                .icon(|ui, rect, visuals, is_open, _| {
-                    let flip = ui.ctx().animate_bool_with_time(
-                        egui::Id::new("settings_model_chevron"),
-                        is_open,
-                        CHEVRON_ANIMATION_TIME,
-                    );
-                    let color = if is_open || ui.rect_contains_pointer(rect) {
-                        ACCENT
-                    } else {
-                        visuals.fg_stroke.color
-                    };
-                    draw_chevron(ui, rect.center(), flip, color);
-                })
-                .show_ui(ui, |ui| {
-                    for model in models {
-                        ui.selectable_value(
-                            &mut self.chat_model,
-                            model.id.to_string(),
-                            format!("{} · {}", model.label, model.note),
+            if !models.is_empty() {
+                let mut picked = None;
+                egui::ComboBox::from_id_source("settings_model_presets")
+                    .width(preset_width)
+                    .selected_text("Presets")
+                    .icon(|ui, rect, visuals, is_open, _| {
+                        let flip = ui.ctx().animate_bool_with_time(
+                            egui::Id::new("settings_model_chevron"),
+                            is_open,
+                            CHEVRON_ANIMATION_TIME,
                         );
-                    }
-                    if !self.chat_provider.has_model(&current) && !current.is_empty() {
-                        ui.separator();
-                        ui.selectable_value(
-                            &mut self.chat_model,
-                            current.clone(),
-                            format!("{current} (saved)"),
-                        );
-                    }
-                });
-            if self.chat_model != current {
-                self.save_assistant_settings();
+                        let color = if is_open || ui.rect_contains_pointer(rect) {
+                            ACCENT
+                        } else {
+                            visuals.fg_stroke.color
+                        };
+                        draw_chevron(ui, rect.center(), flip, color);
+                    })
+                    .show_ui(ui, |ui| {
+                        for model in models {
+                            if ui
+                                .selectable_label(
+                                    self.chat_model == model.id,
+                                    format!("{} · {}", model.label, model.note),
+                                )
+                                .clicked()
+                            {
+                                picked = Some(model.id);
+                            }
+                        }
+                    });
+                if let Some(id) = picked {
+                    self.chat_model = id.to_string();
+                    model_changed = true;
+                }
             }
+        });
+        if model_changed {
+            self.save_assistant_settings();
         }
+        ui.weak("Enter any model ID supported by the provider, or pick a preset.");
     }
 
     fn show_dictation_settings(&mut self, ui: &mut egui::Ui) {

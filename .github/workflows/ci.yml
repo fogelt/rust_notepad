@@ -48,3 +48,51 @@ jobs:
 
       - name: Tests
         run: cargo test --all-targets
+
+  package-windows:
+    name: Package (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Windows builds are not target-cached: a restored sherpa-onnx-sys
+      # fingerprint without its prebuilt lib directory breaks the link.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Build installer
+        run: cargo packager --release --formats nsis --out-dir dist
+
+      - name: Smoke-test installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter '*setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'No installer was produced.' }
+
+          $target = Join-Path $env:RUNNER_TEMP 'rusty-notepad-smoke'
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$target" -Wait
+
+          $required = @(
+            'rust_notepad.exe',
+            'rmd.exe',
+            'onnxruntime.dll',
+            'onnxruntime_providers_shared.dll',
+            'sherpa-onnx-c-api.dll',
+            'sherpa-onnx-cxx-api.dll'
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $target $file))) {
+              throw "Installer is missing $file"
+            }
+          }
+
+          Start-Process -FilePath (Join-Path $target 'uninstall.exe') -ArgumentList '/S' -Wait
+          if (Test-Path (Join-Path $target 'rust_notepad.exe')) {
+            throw 'Uninstall left the application behind.'
+          }

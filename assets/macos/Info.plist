@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Rusty Notepad uses the microphone to record voice instructions and transcribe them with Gemini.</string>
+    <string>Rusty Notepad uses the microphone to record voice instructions and transcribe them.</string>
 </dict>
 </plist>

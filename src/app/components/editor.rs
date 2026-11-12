@@ -7,6 +7,8 @@ use crate::app::theme::{
     SURFACE_HOVERED, panel_frame, panel_header,
 };
 use eframe::egui;
+use egui::text::CCursorRange;
+use egui::text_edit::TextEditState;
 use egui_commonmark::CommonMarkViewer;
 use egui_phosphor::regular as icons;
 use std::collections::hash_map::DefaultHasher;
@@ -112,7 +114,9 @@ fn resolve_image_uris(markdown: &str, base_dir: Option<&Path>) -> String {
             }
         }
         // Copy one char (keep UTF-8 boundaries).
-        let ch = markdown[i..].chars().next().unwrap();
+        let Some(ch) = markdown[i..].chars().next() else {
+            break;
+        };
         out.push(ch);
         i += ch.len_utf8();
     }
@@ -647,7 +651,9 @@ impl NotepadApp {
             ui.separator();
         }
 
-        let html = self.styled_html.as_deref().unwrap();
+        let Some(html) = self.styled_html.as_deref() else {
+            return;
+        };
         let mut hasher = DefaultHasher::new();
         html.hash(&mut hasher);
         let source_hash = hasher.finish();
@@ -668,11 +674,18 @@ impl NotepadApp {
             return texture.clone();
         }
         let bytes = include_bytes!("../../../assets/icon.png");
-        let image = image::load_from_memory(bytes)
-            .expect("bundled app icon is a valid PNG")
-            .to_rgba8();
-        let size = [image.width() as usize, image.height() as usize];
-        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+        let color_image = match image::load_from_memory(bytes) {
+            Ok(image) => {
+                let image = image.to_rgba8();
+                egui::ColorImage::from_rgba_unmultiplied(
+                    [image.width() as usize, image.height() as usize],
+                    image.as_raw(),
+                )
+            }
+            // Bundled at compile time; fall back to a transparent pixel rather
+            // than taking the app down if the asset is ever invalid.
+            Err(_) => egui::ColorImage::from_rgba_unmultiplied([1, 1], &[0, 0, 0, 0]),
+        };
         let texture = ctx.load_texture(
             "rusty_notepad_logo",
             color_image,
@@ -716,6 +729,43 @@ impl NotepadApp {
                 }
             });
         });
+    }
+}
+
+/// Insert `snippet` at the editor cursor, or append it to the document when the
+/// editor has no stored cursor.
+pub(crate) fn insert_at_cursor(app: &mut NotepadApp, ctx: &egui::Context, snippet: &str) {
+    let id = egui::Id::new("editor_text");
+    if let Some(state) = TextEditState::load(ctx, id)
+        && let Some(range) = state.cursor.char_range()
+    {
+        let idx = range.primary.index.max(range.secondary.index);
+        let byte_pos = app
+            .content
+            .char_indices()
+            .nth(idx)
+            .map(|(b, _)| b)
+            .unwrap_or(app.content.len());
+        let mut to_insert = snippet.to_string();
+        if !to_insert.ends_with('\n') {
+            to_insert.push('\n');
+        }
+        app.content.insert_str(byte_pos, &to_insert);
+        let new_c = app.content[..byte_pos + to_insert.len()].chars().count();
+        if let Some(mut st) = TextEditState::load(ctx, id) {
+            st.cursor
+                .set_char_range(Some(CCursorRange::one(egui::text::CCursor::new(new_c))));
+            st.store(ctx, id);
+        }
+        ctx.memory_mut(|m| m.request_focus(id));
+        return;
+    }
+    if !app.content.is_empty() && !app.content.ends_with('\n') {
+        app.content.push('\n');
+    }
+    app.content.push_str(snippet);
+    if !app.content.ends_with('\n') {
+        app.content.push('\n');
     }
 }
 

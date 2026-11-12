@@ -124,11 +124,11 @@ pub struct NotepadApp {
     pub html_started: Option<Instant>,
     pub chat_model: String,
     /// Provider used for assistant text and visual reports.
-    pub chat_provider: crate::app::components::provider::Provider,
+    pub chat_provider: crate::app::ai::provider::Provider,
     /// Providers with a key saved in the OS credential store.
-    pub stored_keys: std::collections::HashSet<crate::app::components::provider::Provider>,
+    pub stored_keys: std::collections::HashSet<crate::app::ai::provider::Provider>,
     /// Provider whose key is currently being entered.
-    pub key_edit: Option<crate::app::components::provider::Provider>,
+    pub key_edit: Option<crate::app::ai::provider::Provider>,
     /// Transient input for the key being entered; cleared after saving.
     pub key_input: String,
     /// Last keychain error, shown in Settings.
@@ -175,7 +175,7 @@ impl NotepadApp {
     }
 
     /// Whether a provider has a key in the keychain or its environment.
-    pub fn has_api_key(&self, provider: crate::app::components::provider::Provider) -> bool {
+    pub fn has_api_key(&self, provider: crate::app::ai::provider::Provider) -> bool {
         self.stored_keys.contains(&provider)
             || !crate::app::config::pick("", provider.env_var()).is_empty()
     }
@@ -216,9 +216,10 @@ impl NotepadApp {
                 Ok(text) => {
                     let word_count = text.split_whitespace().count();
                     let char_count = text.chars().count();
+                    let file_name = p.file_name().unwrap_or_else(|| std::ffi::OsStr::new(""));
                     Self {
                         content: text,
-                        status_message: format!("Opened: {:?}", p.file_name().unwrap()),
+                        status_message: format!("Opened: {file_name:?}"),
                         file_path: Some(p),
                         word_count,
                         char_count,
@@ -253,7 +254,7 @@ impl Default for NotepadApp {
     fn default() -> Self {
         // Stored settings win; environment (.env) is the fallback.
         let stored = crate::app::config::load();
-        use crate::app::components::provider::Provider;
+        use crate::app::ai::provider::Provider;
         // An explicit provider wins; otherwise guess from the stored key.
         let provider = Provider::from_id(&stored.provider)
             .or_else(|| Provider::detect(&stored.api_key))
@@ -270,11 +271,7 @@ impl Default for NotepadApp {
         let model = if !stored.model.trim().is_empty() {
             stored.model.trim().to_string()
         } else {
-            let env_model = if provider == Provider::Gemini {
-                crate::app::config::pick("", "GEMINI_MODEL")
-            } else {
-                String::new()
-            };
+            let env_model = crate::app::config::pick("", provider.env_model_var());
             if env_model.is_empty() {
                 provider.default_model().to_string()
             } else {

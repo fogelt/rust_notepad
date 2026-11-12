@@ -4,7 +4,7 @@
 //! Secret Service on Linux. They are never written to the config file and are
 //! never shown again after saving.
 
-use crate::app::components::provider::Provider;
+use crate::app::ai::provider::Provider;
 
 const SERVICE: &str = "rust_notepad";
 

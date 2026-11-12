@@ -1,10 +1,11 @@
-//! AI providers the assistant can talk to.
+//! Provider metadata: names, key handling, and curated model lists.
 //!
-//! The app started out with Google Gemini only. The provider is now an
-//! explicit choice, with a best-effort guess from the API key prefix so a
-//! pasted key usually selects the right entry on its own.
+//! All per-provider metadata lives in [`SPECS`] so adding a provider is one
+//! table entry (plus its transport in `ai::text`). The provider is stored as a
+//! stable id in the config file, and an API key prefix gives a best-effort hint
+//! when a key is pasted.
 
-/// A curated model entry shown in the Settings → AI dropdown.
+/// A curated model entry shown in the Settings → Provider dropdown.
 pub struct ModelChoice {
     pub id: &'static str,
     pub label: &'static str,
@@ -83,14 +84,90 @@ const DEEPSEEK_MODELS: &[ModelChoice] = &[
     },
 ];
 
+/// Everything the app knows about a provider except how to talk to it.
+///
+/// Transport lives in `ai::text`; keeping metadata here makes provider work
+/// data-driven and leaves room for a future local/OpenAI-compatible provider
+/// (custom endpoint, no API key) with its own spec.
+pub struct ProviderSpec {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub env_key: &'static str,
+    pub env_model: &'static str,
+    pub key_hint: &'static str,
+    pub key_url: &'static str,
+    pub models: &'static [ModelChoice],
+}
+
+const SPECS: [ProviderSpec; 5] = [
+    ProviderSpec {
+        id: "gemini",
+        label: "Google Gemini",
+        env_key: "GEMINI_API_KEY",
+        env_model: "GEMINI_MODEL",
+        key_hint: "Paste your Gemini API key…",
+        key_url: "https://aistudio.google.com/api-keys",
+        models: GEMINI_MODELS,
+    },
+    ProviderSpec {
+        id: "openai",
+        label: "OpenAI",
+        env_key: "OPENAI_API_KEY",
+        env_model: "OPENAI_MODEL",
+        key_hint: "Paste your OpenAI API key…",
+        key_url: "https://platform.openai.com/api-keys",
+        models: OPENAI_MODELS,
+    },
+    ProviderSpec {
+        id: "anthropic",
+        label: "Anthropic",
+        env_key: "ANTHROPIC_API_KEY",
+        env_model: "ANTHROPIC_MODEL",
+        key_hint: "Paste your Anthropic API key…",
+        key_url: "https://console.anthropic.com/settings/keys",
+        models: ANTHROPIC_MODELS,
+    },
+    ProviderSpec {
+        id: "openrouter",
+        label: "OpenRouter",
+        env_key: "OPENROUTER_API_KEY",
+        env_model: "OPENROUTER_MODEL",
+        key_hint: "Paste your OpenRouter API key…",
+        key_url: "https://openrouter.ai/keys",
+        // OpenRouter has a huge, fast-moving catalog, so the model is entered
+        // by hand instead of guessed at.
+        models: &[],
+    },
+    ProviderSpec {
+        id: "deepseek",
+        label: "DeepSeek",
+        env_key: "DEEPSEEK_API_KEY",
+        env_model: "DEEPSEEK_MODEL",
+        key_hint: "Paste your DeepSeek API key…",
+        key_url: "https://platform.deepseek.com/api_keys",
+        models: DEEPSEEK_MODELS,
+    },
+];
+
+/// API key prefixes, ordered so more specific prefixes win (`sk-ant-` and
+/// `sk-or-` before `sk-`).
+const KEY_PREFIXES: &[(&str, Provider)] = &[
+    ("AIza", Provider::Gemini),
+    ("AQ.", Provider::Gemini),
+    ("sk-ant-", Provider::Anthropic),
+    ("sk-or-", Provider::OpenRouter),
+    ("sk-", Provider::OpenAi),
+];
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[repr(usize)]
 pub enum Provider {
     #[default]
-    Gemini,
-    OpenAi,
-    Anthropic,
-    OpenRouter,
-    DeepSeek,
+    Gemini = 0,
+    OpenAi = 1,
+    Anthropic = 2,
+    OpenRouter = 3,
+    DeepSeek = 4,
 }
 
 impl Provider {
@@ -102,37 +179,25 @@ impl Provider {
         Provider::DeepSeek,
     ];
 
+    pub fn spec(self) -> &'static ProviderSpec {
+        &SPECS[self as usize]
+    }
+
     /// Stable value stored in the config file.
     pub fn id(self) -> &'static str {
-        match self {
-            Provider::Gemini => "gemini",
-            Provider::OpenAi => "openai",
-            Provider::Anthropic => "anthropic",
-            Provider::OpenRouter => "openrouter",
-            Provider::DeepSeek => "deepseek",
-        }
+        self.spec().id
     }
 
     pub fn from_id(id: &str) -> Option<Self> {
-        match id.trim().to_ascii_lowercase().as_str() {
-            "gemini" => Some(Provider::Gemini),
-            "openai" | "open-ai" => Some(Provider::OpenAi),
-            "anthropic" | "claude" => Some(Provider::Anthropic),
-            "openrouter" | "open-router" => Some(Provider::OpenRouter),
-            "deepseek" | "deep-seek" => Some(Provider::DeepSeek),
-            _ => None,
-        }
+        let id = id.trim().to_ascii_lowercase();
+        Provider::ALL
+            .into_iter()
+            .find(|provider| provider.id() == id)
     }
 
     /// Name shown in the interface.
     pub fn label(self) -> &'static str {
-        match self {
-            Provider::Gemini => "Google Gemini",
-            Provider::OpenAi => "OpenAI",
-            Provider::Anthropic => "Anthropic",
-            Provider::OpenRouter => "OpenRouter",
-            Provider::DeepSeek => "DeepSeek",
-        }
+        self.spec().label
     }
 
     /// Best-effort guess from the API key prefix. Returns `None` when the key
@@ -143,65 +208,34 @@ impl Provider {
     /// switching it back.
     pub fn detect(key: &str) -> Option<Self> {
         let key = key.trim();
-        // Google keys use the classic AIza prefix or the newer AQ. prefix.
-        if key.starts_with("AIza") || key.starts_with("AQ.") {
-            return Some(Provider::Gemini);
-        }
-        if key.starts_with("sk-ant-") {
-            return Some(Provider::Anthropic);
-        }
-        if key.starts_with("sk-or-") {
-            return Some(Provider::OpenRouter);
-        }
-        if key.starts_with("sk-") {
-            return Some(Provider::OpenAi);
-        }
-        None
+        KEY_PREFIXES
+            .iter()
+            .find(|(prefix, _)| key.starts_with(prefix))
+            .map(|(_, provider)| *provider)
     }
 
     /// Environment variable used as a fallback when the field is empty.
     pub fn env_var(self) -> &'static str {
-        match self {
-            Provider::Gemini => "GEMINI_API_KEY",
-            Provider::OpenAi => "OPENAI_API_KEY",
-            Provider::Anthropic => "ANTHROPIC_API_KEY",
-            Provider::OpenRouter => "OPENROUTER_API_KEY",
-            Provider::DeepSeek => "DEEPSEEK_API_KEY",
-        }
+        self.spec().env_key
+    }
+
+    /// Environment variable that overrides the default model.
+    pub fn env_model_var(self) -> &'static str {
+        self.spec().env_model
     }
 
     /// Placeholder for the key field.
     pub fn key_hint(self) -> &'static str {
-        match self {
-            Provider::Gemini => "Paste your Gemini API key…",
-            Provider::OpenAi => "Paste your OpenAI API key…",
-            Provider::Anthropic => "Paste your Anthropic API key…",
-            Provider::OpenRouter => "Paste your OpenRouter API key…",
-            Provider::DeepSeek => "Paste your DeepSeek API key…",
-        }
+        self.spec().key_hint
     }
 
     /// Page where a new API key can be created.
     pub fn key_url(self) -> &'static str {
-        match self {
-            Provider::Gemini => "https://aistudio.google.com/api-keys",
-            Provider::OpenAi => "https://platform.openai.com/api-keys",
-            Provider::Anthropic => "https://console.anthropic.com/settings/keys",
-            Provider::OpenRouter => "https://openrouter.ai/keys",
-            Provider::DeepSeek => "https://platform.deepseek.com/api_keys",
-        }
+        self.spec().key_url
     }
 
     pub fn models(self) -> &'static [ModelChoice] {
-        match self {
-            Provider::Gemini => GEMINI_MODELS,
-            Provider::OpenAi => OPENAI_MODELS,
-            Provider::Anthropic => ANTHROPIC_MODELS,
-            Provider::DeepSeek => DEEPSEEK_MODELS,
-            // OpenRouter has a huge, fast-moving catalog, so the model is
-            // entered by hand instead of guessed at.
-            Provider::OpenRouter => &[],
-        }
+        self.spec().models
     }
 
     pub fn default_model(self) -> &'static str {
@@ -246,6 +280,16 @@ mod tests {
         for provider in Provider::ALL {
             assert_eq!(Provider::from_id(provider.id()), Some(provider));
             assert!(!provider.label().is_empty());
+        }
+    }
+
+    #[test]
+    fn every_provider_has_key_metadata() {
+        for provider in Provider::ALL {
+            assert!(!provider.env_var().is_empty());
+            assert!(!provider.env_model_var().is_empty());
+            assert!(!provider.key_hint().is_empty());
+            assert!(provider.key_url().starts_with("https://"));
         }
     }
 

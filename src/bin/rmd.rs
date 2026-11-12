@@ -3,6 +3,8 @@
 //! Console binary installed next to `rust_notepad` so `rmd notes.md` works
 //! from any terminal on Windows, macOS and Linux.
 
+#![forbid(unsafe_code)]
+
 #[path = "../rmd_cli.rs"]
 mod rmd_cli;
 
