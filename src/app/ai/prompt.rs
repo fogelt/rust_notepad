@@ -12,82 +12,49 @@ pub(crate) fn build_prompt(instruction: &str, document: &str) -> String {
     )
 }
 
-/// Prompt for the optional assistant-designed HTML preview. The model is asked
-/// to analyze the document and build a visual report, not just reformat it.
+/// Prompt for the optional assistant-designed HTML preview. The model reads the
+/// document, decides what presentation suits it, and builds a self-contained
+/// page within the renderer's constraints.
 pub(crate) fn build_html_design_prompt(document: &str) -> String {
-    let prompt = r#"You are a visual document designer and analyst. Read the Markdown below, understand what kind of document it is (for example an earnings report, proposal, meeting notes, README, article, or plan), and design a polished, self-contained HTML page that helps a reader understand it at a glance.
+    let prompt = r#"You are a visual document designer. Read the Markdown below and design a polished, self-contained HTML page that helps a reader understand it at a glance.
 
-REQUIREMENTS
-- Do NOT just reformat or copy the Markdown. Extract the key message, metrics, trends, comparisons, risks, actions, and notable facts, then present them in a designed layout.
-- Use a hero section with a one-paragraph executive summary, KPI/stat cards, horizontal bar charts, progress bars, a pie or donut chart, vertical column charts, timelines, callout boxes, comparison tables, and badges where they genuinely help. Pick 4-7 components; do not cram in everything.
-- Only visualize data that is actually present in the source. Never invent or estimate numbers. For qualitative documents, use structured callouts and summaries instead of fake charts.
-- Keep all key facts and the document's meaning. You may reorganize and summarize, but do not omit important details.
+THINK FIRST
+- Decide what kind of document this is — an article, report, proposal, meeting notes, README or docs, plan, retrospective, recipe, letter, journal entry, research summary, and so on — and choose a presentation that fits it. Data-heavy documents may suit stat cards and charts; essays, stories and personal notes may suit typography, pull quotes and calm sections; docs may suit clear headings and a summary box. Never force a business-report layout onto text that has no numbers.
+- Find the key message, structure, facts, numbers, comparisons and actions, then reorganize for clarity. Summarize where it helps, but keep the meaning and important details. Never invent or estimate data, and only chart numbers that appear in the source.
+- Pick a handful of elements that genuinely help — cards, callouts, quotes, tables, timelines, bars, columns, a pie/donut — and skip the rest.
+- Aim for roughly 600-1000 words: focused and compact, not a restatement of the source.
+
+OUTPUT
 - Return ONLY the complete HTML document, starting with <!DOCTYPE html>. No code fences, no commentary.
-- Use one inline <style> block. No external stylesheets, fonts, or scripts. The only external resources allowed are the Commons images described below.
-- Include one relevant hero photo near the top, and optionally a second one in a section. Use placeholder URLs of the form `commons:<2-4 descriptive words>`, for example `<img src='commons:finance office' alt='Finance office'>`. The app resolves these to public-domain Wikimedia Commons photos, wraps them in a full-width photo block, and adds a credit line. Do not use any other image URL, and never rely on an image to convey data.
-- Do not use JavaScript. Charts must be pure HTML/CSS.
-- Dark theme: page background #1c1d20, body text #e4e4e7, headings #ffffff, accent and links #84aee0, muted text #9a9ca3, dividers #3a3c44, raised cards #232428, positive #7ecb8f, warning #e0b878, negative #e08a8a.
+- One inline <style> block. No JavaScript, external stylesheets or fonts.
+- Images: use placeholder URLs of the form `commons:<2-4 descriptive words>` (for example `<img src='commons:coffee cart' alt='Coffee cart'>`). Include one relevant hero photo near the top and optionally one more; the app resolves them to freely licensed Wikimedia Commons photos and adds the credit line. Choose a concrete, photographable subject named or clearly implied by the document — a place, trail, building, object, activity, dish or person. Never use abstract or distant words like "earth", "space", "nature", "business" or "success": the photo must show something specific the document talks about. Never rely on an image to convey data.
 
-RENDERER RULES (important)
-The page is rendered by a lightweight engine, not a full browser. Follow these rules exactly:
-- Do NOT use CSS grid, flexbox, gap, box-shadow, transform, clamp(), calc(), aspect-ratio, inset, vw/vh units, position:fixed, or position:sticky. Do not set min-width on tables, and do not use white-space:nowrap on long text.
-- The only allowed positioning is inside pie/donut markup: position:relative on the chart wrapper, position:absolute for the donut hole and center label.
-- Build multi-column layouts and card rows with <table> elements (width="100%", table-layout:fixed, one <td> per column). Put each card's background, padding, and border-radius directly on its <td>. Do not wrap cards in inner divs; those do not stretch to the row height.
-- Use cell padding and margins for spacing, never gap.
-- Use px font sizes: body 14-15px, h1 26-28px, h2 18-20px, h3 15-16px, small labels 11-12px. Keep line-height around 1.5.
-- Horizontal bars: a 2-cell table row for the label and value, then a rounded track div with a child div whose width is the percentage (recipe below).
-- Vertical columns: a table row of cells with vertical-align:bottom, each containing a fixed-height div for the bar and a label underneath.
-- Timelines: a table with a narrow date cell and a content cell, or stacked rows with a colored left border.
+DESIGN
+- Aim to wow on the first scroll, then keep it effortless to read. Build a dramatic hero: a full-width band with a subtle linear-gradient, a kicker chip, a display title up to 44px and a one-line summary.
+- Give the page rhythm: oversized section numbers (01, 02, ...), thin rules, alternating tinted bands, editorial pull quotes, large stat numerals and small uppercase labels. Use filled panels, soft corners and gradients instead of outlines.
+- Avoid a dashboard of identical rounded cards. Vary the composition section by section and let whitespace do work.
+- Commit to one visual direction that suits the document — for example editorial magazine, field notes, or a technical brief — and carry it through type, spacing and imagery. Do not blend several looks.
 
-RESPONSIVE RULES (mandatory)
-The preview panel can be as narrow as 320px, so every report MUST be readable there with no horizontal overflow.
-- Give every layout table (KPI row, card row, action row, image+text row) the class "stack". Give every chart+legend row the class "chart-row" and its two cells the class "chart-cell".
-- Use at most 4 columns in data tables, never table-layout:fixed on them, and put class="hide-narrow" on columns that can disappear on phones.
-- Avoid long unbroken words and tables with 5 or more columns.
-- Include this block at the very end of <style>, unchanged:
-@media (max-width: 640px) {
-  body { padding: 14px 12px; font-size: 14px; }
-  h1 { font-size: 22px; }
-  h2 { font-size: 17px; margin: 18px 0 10px; }
-  h3 { font-size: 15px; }
-  .stack { border-spacing: 0; margin: 0; }
-  .stack td { display: block; width: 100%; margin-bottom: 8px; }
-  .chart-cell { display: block; width: 100%; }
-  .hide-narrow { display: none; }
-  .data { font-size: 12px; }
-  .data th, .data td { padding: 6px 4px; }
-}
-- Tables with class "stack" must use border-collapse:separate and horizontal border-spacing so cards have gaps on desktop (for example border-spacing:9px 0; margin:0 -9px). The media query removes the spacing when cells stack.
+ENGINE LIMITS
+The preview is a lightweight HTML engine, not a browser:
+- No CSS grid, flexbox, gap, box-shadow, transform, clamp(), calc(), aspect-ratio, inset, vw/vh, position:fixed or position:sticky. position:relative/absolute is allowed only for pie/donut markup.
+- Build multi-column rows with `<table width="100%" style="table-layout:fixed">` and one `<td>` per column. Put card backgrounds, padding and rounding on the `<td>` itself, and use padding and margins for spacing.
+- No min-width on tables. Data tables: at most 4 columns, no fixed layout, class="hide-narrow" on optional columns. Avoid long unbroken words and `white-space:nowrap` on text.
+- Font sizes in px: body 14-15, a hero display title up to 44, h1 26-32, h2 18-22, h3 15-17, small labels 11-12; line-height around 1.5.
+- Bars: a label/value table row, then a rounded track div with a child div sized by width. Columns: bottom-aligned table cells with fixed-height bars. Pie/donut: a conic-gradient on a fixed-size square div plus a legend table, using the exact shares from the source.
+- The preview can be 320px wide: give layout tables class="stack" and chart cells class="chart-cell", and end the stylesheet with:
+  @media (max-width: 640px) {
+    body { padding: 14px 12px; font-size: 14px; }
+    h1 { font-size: 22px; } h2 { font-size: 17px; margin: 18px 0 10px; } h3 { font-size: 15px; }
+    .stack { border-spacing: 0; margin: 0; } .stack td { display: block; width: 100%; margin-bottom: 8px; }
+    .chart-cell { display: block; width: 100%; }
+    .hide-narrow { display: none; }
+    .data { font-size: 12px; } .data th, .data td { padding: 6px 4px; }
+  }
+- Stacked card tables keep desktop gaps with `border-collapse:separate; border-spacing:9px 0; margin:0 -9px`.
 
-PIE AND DONUT RECIPE (supported by the engine)
-Use conic-gradient on a fixed-size square div, with a legend table beside it:
-<table class="chart-row" width="100%"><tr>
-<td class="chart-cell" width="55%" style="text-align:center;vertical-align:middle;">
-  <div style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#84aee0 0 52%, #7fc99a 52% 83%, #e0b878 83% 95%, #8a8f9c 95% 100%);margin:0 auto;"></div>
-</td>
-<td class="chart-cell" width="45%" style="vertical-align:middle;padding-left:14px;">
-  <table width="100%"><tr>
-    <td style="font-size:13px;padding:3px 0;"><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#84aee0;"></span> North America</td>
-    <td style="text-align:right;color:#9a9ca3;font-size:13px;">52%</td>
-  </tr></table>
-</td></tr></table>
-- The conic-gradient stops must run from 0 to 100% in order and use the exact shares from the source data.
-- For a donut, wrap the circle in <div style="position:relative;width:150px;height:150px;margin:0 auto;">, keep the circle div inside, and add <div style="position:absolute;left:25%;top:25%;width:50%;height:50%;border-radius:50%;background:#1c1d20;"></div> for the hole. Optionally add a centered label with <div style="position:absolute;left:0;top:60px;width:150px;text-align:center;font-size:20px;font-weight:700;color:#ffffff;">52%</div>.
-- Never use aspect-ratio, ::after, or percentages for the chart size.
-
-HORIZONTAL BAR RECIPE
-<div style="margin-bottom:10px;">
-  <table width="100%"><tr>
-    <td style="font-weight:600;font-size:13px;">Online store</td>
-    <td style="text-align:right;color:#9a9ca3;font-size:13px;">$2.6M &middot; 54%</td>
-  </tr></table>
-  <div style="width:100%;height:14px;background:#2b2d32;border-radius:7px;"><div style="width:54%;height:14px;border-radius:7px;background:#84aee0;"></div></div>
-</div>
-
-VISUAL STYLE
-- Prefer background fills, spacing, and soft rounded corners over outlines. Do not put a 1px border around cards, panels, or sections; reserve borders for table rules and deliberate dividers.
-- Keep the page focused and compact: aim for roughly 600-1000 words. Avoid repeating the source verbatim or adding sections that do not add insight.
-- Design for 320px as you write: card labels should wrap in words, values stay large, and no element may be wider than its container.
+PALETTE
+Dark theme: page background #1c1d20, body text #e4e4e7, headings #ffffff, accent and links #84aee0, muted text #9a9ca3, dividers #3a3c44, raised cards #232428, positive #7ecb8f, warning #e0b878, negative #e08a8a.
 
 --- MARKDOWN ---
 "#;
@@ -103,5 +70,14 @@ mod tests {
         assert!(p.contains("Make it a table"));
         assert!(p.contains("# Hi"));
         assert!(p.contains("Return ONLY"));
+    }
+
+    #[test]
+    fn html_prompt_embeds_document_and_engine_limits() {
+        let p = build_html_design_prompt("# Notes");
+        assert!(p.contains("# Notes"));
+        assert!(p.contains("<!DOCTYPE html>"));
+        assert!(p.contains("conic-gradient"));
+        assert!(p.contains("@media (max-width: 640px)"));
     }
 }

@@ -25,9 +25,107 @@ struct CommonsImage {
     thumb_url: String,
     description_url: String,
     title: String,
+    artist: String,
     license: String,
     width: u32,
     height: u32,
+}
+
+/// Overused placeholder words that produce generic stock-like photos instead
+/// of something from the document. Queries made only of these are dropped so
+/// the document-derived fallback image wins.
+const ABSTRACT_IMAGE_WORDS: &[&str] = &[
+    "earth",
+    "planet",
+    "world",
+    "globe",
+    "space",
+    "satellite",
+    "nature",
+    "landscape",
+    "environment",
+    "background",
+    "abstract",
+    "concept",
+    "business",
+    "finance",
+    "financial",
+    "market",
+    "growth",
+    "success",
+    "technology",
+    "innovation",
+    "digital",
+    "data",
+    "future",
+    "ideas",
+    "life",
+];
+
+fn abstract_image_query(keywords: &str) -> bool {
+    let words: Vec<&str> = keywords
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    !words.is_empty()
+        && words
+            .iter()
+            .all(|word| ABSTRACT_IMAGE_WORDS.contains(&word.to_ascii_lowercase().as_str()))
+}
+
+/// File kinds that make poor hero photos unless the query explicitly asks for
+/// one (for example a trail map in a hiking document).
+const NON_PHOTO_WORDS: &[&str] = &[
+    "map",
+    "diagram",
+    "chart",
+    "graph",
+    "logo",
+    "schematic",
+    "floor plan",
+    "site plan",
+    "icon",
+    "seal",
+    "coat of arms",
+    "flag",
+    "symbol",
+];
+
+fn non_photo_title(title: &str, words: &[String]) -> bool {
+    let title = title.to_ascii_lowercase();
+    let title_words = query_words(&title);
+    NON_PHOTO_WORDS.iter().any(|word| {
+        let asked = words.iter().any(|query| query.contains(word));
+        let found = if word.contains(' ') {
+            title.contains(word)
+        } else {
+            title_words.iter().any(|title_word| title_word == word)
+        };
+        found && !asked
+    })
+}
+
+/// Search-result page, ordered by the relevance `index` the API assigns.
+fn search_index(page: &serde_json::Value) -> u64 {
+    page["index"].as_u64().unwrap_or(u64::MAX)
+}
+
+/// Whether a Commons file title mentions any meaningful word from the query.
+/// Guards against a search that silently returns unrelated photos.
+fn title_matches_query(title: &str, query_words: &[String]) -> bool {
+    if query_words.is_empty() {
+        return true;
+    }
+    let title = title.to_ascii_lowercase();
+    query_words.iter().any(|word| title.contains(word))
+}
+
+fn query_words(keywords: &str) -> Vec<String> {
+    keywords
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() > 2 && !word.chars().all(|c| c.is_ascii_digit()))
+        .map(str::to_ascii_lowercase)
+        .collect()
 }
 
 /// Replace `src="commons:<keywords>"` placeholders with public-domain
@@ -48,6 +146,7 @@ pub(crate) fn resolve_commons_images(html: &str) -> String {
         let tag = &html[start..end];
         if resolved < 2
             && let Some(keywords) = tag_commons_keywords(tag)
+            && !abstract_image_query(&keywords)
             && let Some(image) = commons_image(&keywords)
         {
             let alt = image.title.strip_prefix("File:").unwrap_or(&image.title);
@@ -78,11 +177,39 @@ fn tag_commons_keywords(tag: &str) -> Option<String> {
         .filter(|keywords| !keywords.is_empty())
 }
 
+/// Crude HTML-tag stripper for the Commons artist field, which usually wraps
+/// a user name in a link.
+fn strip_tags(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    out.trim()
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn credit_html(image: &CommonsImage) -> String {
     let title = escape_html(image.title.strip_prefix("File:").unwrap_or(&image.title));
+    let artist = if image.artist.is_empty() {
+        String::new()
+    } else {
+        format!(" &middot; {}", escape_html(&image.artist))
+    };
     format!(
         "<div style=\"font-size:11px;color:#9a9ca4;margin:4px 0 0;\">Photo: \
-         <a href=\"{}\" style=\"color:#84aee0;\">{}</a> &middot; {}</div>",
+         <a href=\"{}\" style=\"color:#84aee0;\">{}</a>{artist} &middot; {}</div>",
         escape_html(&image.description_url),
         title,
         escape_html(&image.license)
@@ -154,15 +281,27 @@ fn commons_image(keywords: &str) -> Option<CommonsImage> {
     }
     let json: serde_json::Value = resp.json().ok()?;
     let pages = json["query"]["pages"].as_object()?;
-    for page in pages.values() {
+    let words = query_words(keywords);
+    let mut candidates: Vec<&serde_json::Value> = pages.values().collect();
+    // The API returns pages keyed by page id, so restore the search ranking
+    // before picking the first usable photo.
+    candidates.sort_by_key(|page| search_index(page));
+    for page in candidates {
         let info = &page["imageinfo"][0];
+        let title = page["title"].as_str().unwrap_or("");
+        if !title_matches_query(title, &words) || non_photo_title(title, &words) {
+            continue;
+        }
         let license = info["extmetadata"]["LicenseShortName"]["value"]
             .as_str()
             .unwrap_or("");
         let license_lower = license.to_ascii_lowercase();
+        // Public domain needs no credit; CC BY and CC BY-SA are fine because
+        // the photo block always prints the title, author and license.
         if !(license_lower.contains("cc0")
             || license_lower.contains("public domain")
-            || license_lower == "pd")
+            || license_lower == "pd"
+            || license_lower.contains("cc by"))
         {
             continue;
         }
@@ -170,14 +309,19 @@ fn commons_image(keywords: &str) -> Option<CommonsImage> {
             continue;
         };
         let description_url = info["descriptionurl"].as_str().unwrap_or("");
-        let title = page["title"].as_str().unwrap_or("");
         if thumb_url.is_empty() || description_url.is_empty() || title.is_empty() {
             continue;
         }
+        let artist = strip_tags(
+            info["extmetadata"]["Artist"]["value"]
+                .as_str()
+                .unwrap_or(""),
+        );
         return Some(CommonsImage {
             thumb_url: thumb_url.to_string(),
             description_url: description_url.to_string(),
             title: title.to_string(),
+            artist,
             license: license.to_string(),
             width: info["thumbwidth"].as_u64().unwrap_or(0) as u32,
             height: info["thumbheight"].as_u64().unwrap_or(0) as u32,
@@ -484,18 +628,55 @@ mod tests {
     }
 
     #[test]
+    fn abstract_image_queries_are_rejected() {
+        assert!(abstract_image_query("earth"));
+        assert!(abstract_image_query("planet earth"));
+        assert!(abstract_image_query("Business Success"));
+        assert!(!abstract_image_query("finance office"));
+        assert!(!abstract_image_query("kungsleden trail"));
+        assert!(!abstract_image_query("mountain landscape"));
+    }
+
+    #[test]
+    fn image_titles_must_mention_the_query() {
+        let words = query_words("kungsleden trail");
+        assert!(title_matches_query(
+            "File:Kungsleden over Teusajaure.jpg",
+            &words
+        ));
+        assert!(!title_matches_query(
+            "File:North America from low orbiting satellite Suomi NPP.jpg",
+            &words
+        ));
+    }
+
+    #[test]
+    fn non_photo_results_are_skipped_unless_requested() {
+        let words = query_words("kungsleden");
+        assert!(non_photo_title("File:Kungsleden map.png", &words));
+        assert!(!non_photo_title(
+            "File:Kungsleden over Teusajaure.jpg",
+            &words
+        ));
+        let map_words = query_words("kungsleden map");
+        assert!(!non_photo_title("File:Kungsleden map.png", &map_words));
+    }
+
+    #[test]
     fn images_render_as_full_width_aspect_ratio_boxes() {
         let image = CommonsImage {
             thumb_url: String::from("https://thumb.wikimedia.org/photo.jpg"),
             description_url: String::from("https://commons.wikimedia.org/wiki/File:Photo.jpg"),
             title: String::from("File:Photo.jpg"),
-            license: String::from("CC0"),
+            artist: String::from("A. Photographer"),
+            license: String::from("CC BY-SA 4.0"),
             width: 960,
             height: 720,
         };
         let html = image_figure(&image, "Photo");
         assert!(html.contains("width:100%;padding-top:75.00%;"), "{html}");
         assert!(html.contains("background-size:cover"), "{html}");
+        assert!(html.contains("A. Photographer"), "{html}");
         assert!(
             html.contains("background-image:url('https://thumb.wikimedia.org/photo.jpg')"),
             "{html}"
