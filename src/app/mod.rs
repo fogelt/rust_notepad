@@ -5,8 +5,8 @@ pub mod audio;
 pub mod components;
 pub mod config;
 pub mod dictation;
+pub mod gemini_live;
 pub mod keys;
-pub mod live;
 pub mod local_stt;
 pub mod models;
 pub mod provider_stt;
@@ -76,7 +76,6 @@ impl NotepadApp {
         if let Some([w, h]) = inner
             && (w < WINDOW_MIN_SIZE[0] - 1.0 || h < WINDOW_MIN_SIZE[1] - 1.0)
         {
-            eprintln!("[window] below minimum ({w:.0}x{h:.0}); restoring floor");
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
                 WINDOW_MIN_SIZE[0].max(w),
                 WINDOW_MIN_SIZE[1].max(h),

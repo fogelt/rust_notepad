@@ -102,25 +102,32 @@ impl NotepadApp {
         crate::app::config::pick("", self.chat_provider.env_var())
     }
 
+    /// Provider, key, and model for a request, or report what is missing.
+    fn assistant_credentials(&mut self) -> Option<(Provider, String, String)> {
+        let api_key = self.api_key();
+        if api_key.is_empty() {
+            self.report_error("No API key: add one in Settings > Provider.");
+            return None;
+        }
+        let model = self.chat_model.trim().to_string();
+        if model.is_empty() {
+            self.report_error("No model selected. Pick one in Settings > Provider.");
+            return None;
+        }
+        Some((self.chat_provider, api_key, model))
+    }
+
     /// Send the instruction and the current document to the selected provider.
     fn send_chat(&mut self) {
         let instruction = self.chat_input.trim().to_string();
         if instruction.is_empty() || self.chat_busy || self.is_dictating() {
             return;
         }
-        let api_key = self.api_key();
-        if api_key.is_empty() {
-            self.report_error("No API key: add one in Settings > AI.");
+        let Some((provider, api_key, model)) = self.assistant_credentials() else {
             return;
-        }
-        let model = self.chat_model.trim().to_string();
-        if model.is_empty() {
-            self.report_error("No model selected. Pick one in Settings > AI.");
-            return;
-        }
+        };
         let prompt = prompt::build_prompt(&instruction, &self.content);
         let (tx, rx) = mpsc::channel();
-        let provider = self.chat_provider;
         // Reasoning models spend part of the budget before writing, so give
         // them a little more room than Gemini needs.
         let max_tokens = if provider == Provider::Gemini {
@@ -150,19 +157,11 @@ impl NotepadApp {
             self.report_error("Open or write a document before styling it as HTML.");
             return;
         }
-        let api_key = self.api_key();
-        if api_key.is_empty() {
-            self.report_error("No API key: add one in Settings > AI.");
+        let Some((provider, api_key, model)) = self.assistant_credentials() else {
             return;
-        }
-        let model = self.chat_model.trim().to_string();
-        if model.is_empty() {
-            self.report_error("No model selected. Pick one in Settings > AI.");
-            return;
-        }
+        };
         let prompt = prompt::build_html_design_prompt(&self.content);
         let (tx, rx) = mpsc::channel();
-        let provider = self.chat_provider;
         let document = self.content.clone();
         let max_tokens = if provider == Provider::Gemini {
             8192
@@ -352,7 +351,10 @@ impl NotepadApp {
                             .fill(send_fill);
                             let response = ui
                                 .add_enabled(can_send, send)
-                                .on_hover_text("Send the instruction to Gemini");
+                                .on_hover_text(format!(
+                                    "Send the instruction to {}",
+                                    self.chat_provider.label()
+                                ));
 
                             if self.chat_busy {
                                 // A bare spinner sits where the plane icon was.
@@ -390,7 +392,7 @@ impl NotepadApp {
                         });
 
                         if !has_key {
-                            ui.weak("Add an API key in Settings > AI to use the assistant.");
+                            ui.weak("Add an API key in Settings > Provider to use the assistant.");
                         } else {
                             ui.weak(
                                 "Use the microphone in the editor toolbar to dictate into the document.",
@@ -444,7 +446,7 @@ impl NotepadApp {
                                     ui.add_space(2.0);
                                     ui.label(
                                         egui::RichText::new(
-                                            "Gemini's suggestion will appear here.",
+                                            "The assistant's suggestion will appear here.",
                                         )
                                         .weak()
                                         .small(),

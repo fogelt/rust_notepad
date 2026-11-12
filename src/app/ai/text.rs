@@ -271,7 +271,9 @@ pub(crate) fn friendly_generation_error(raw: &str, provider: Provider) -> String
         || lower.contains("401")
         || lower.contains("403")
     {
-        return format!("{name} rejected the API key. Check it in Settings > AI and try again.");
+        return format!(
+            "{name} rejected the API key. Check it in Settings > Provider and try again."
+        );
     }
     if lower.contains("429")
         || lower.contains("quota")
@@ -282,7 +284,7 @@ pub(crate) fn friendly_generation_error(raw: &str, provider: Provider) -> String
     }
     if lower.contains("404") || lower.contains("not found") || lower.contains("not supported") {
         return format!(
-            "That model isn't available with {name}. Pick another model in Settings > AI."
+            "That model isn't available with {name}. Pick another model in Settings > Provider."
         );
     }
     if lower.contains("request failed")

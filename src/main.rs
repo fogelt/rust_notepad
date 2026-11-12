@@ -14,7 +14,7 @@ fn main() -> eframe::Result<()> {
         std::process::exit(rmd_cli::run_with(std::env::args().skip(2)));
     }
 
-    // Load GEMINI_API_KEY (and optional GEMINI_MODEL) from .env; ignored if absent.
+    // Load provider API keys and *_MODEL overrides from .env; ignored if absent.
     let _ = dotenvy::dotenv();
     let args: Vec<String> = std::env::args().collect();
     let initial_path = if args.len() > 1 {

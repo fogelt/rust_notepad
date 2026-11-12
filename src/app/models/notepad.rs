@@ -271,11 +271,7 @@ impl Default for NotepadApp {
         let model = if !stored.model.trim().is_empty() {
             stored.model.trim().to_string()
         } else {
-            let env_model = if provider == Provider::Gemini {
-                crate::app::config::pick("", "GEMINI_MODEL")
-            } else {
-                String::new()
-            };
+            let env_model = crate::app::config::pick("", provider.env_model_var());
             if env_model.is_empty() {
                 provider.default_model().to_string()
             } else {

@@ -1,10 +1,9 @@
-//! AI providers the assistant can talk to.
+//! Provider metadata: names, key handling, and curated model lists.
 //!
-//! The app started out with Google Gemini only. The provider is now an
-//! explicit choice, with a best-effort guess from the API key prefix so a
-//! pasted key usually selects the right entry on its own.
+//! The provider is stored as a stable id in the config file, and an API key
+//! prefix gives a best-effort hint when a key is pasted.
 
-/// A curated model entry shown in the Settings → AI dropdown.
+/// A curated model entry shown in the Settings → Provider dropdown.
 pub struct ModelChoice {
     pub id: &'static str,
     pub label: &'static str,
@@ -167,6 +166,17 @@ impl Provider {
             Provider::Anthropic => "ANTHROPIC_API_KEY",
             Provider::OpenRouter => "OPENROUTER_API_KEY",
             Provider::DeepSeek => "DEEPSEEK_API_KEY",
+        }
+    }
+
+    /// Environment variable that overrides the default model.
+    pub fn env_model_var(self) -> &'static str {
+        match self {
+            Provider::Gemini => "GEMINI_MODEL",
+            Provider::OpenAi => "OPENAI_MODEL",
+            Provider::Anthropic => "ANTHROPIC_MODEL",
+            Provider::OpenRouter => "OPENROUTER_MODEL",
+            Provider::DeepSeek => "DEEPSEEK_MODEL",
         }
     }
 

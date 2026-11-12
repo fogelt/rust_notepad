@@ -340,7 +340,7 @@ impl NotepadApp {
                                             ui,
                                             &mut self.tabs.assistant,
                                             "Assistant",
-                                            "Toggle the Gemini assistant panel",
+                                            "Toggle the assistant panel",
                                             egui::Rounding {
                                                 nw: 7.0,
                                                 sw: 7.0,

@@ -5,6 +5,7 @@
 //! UI and report generation live in `components::ai_chat`.
 
 use crate::app::NotepadApp;
+use crate::app::ai::provider::Provider;
 use crate::app::ai::text;
 use crate::app::local_stt::{self, LocalSession};
 use crate::app::models::{DictationEvent, DictationSource, DictationStream};
@@ -53,6 +54,22 @@ fn prepare_dictation(content: &str, first: usize, second: usize) -> (String, usi
     (updated, insert_at, needs_trailing)
 }
 
+/// Message shown when the active provider has no transcription API.
+fn unsupported_transcription(provider: Provider) -> String {
+    format!(
+        "{} doesn't offer transcription. Choose Local in Settings > Dictation or \
+         switch to Gemini or OpenAI in Settings > Provider.",
+        provider.label()
+    )
+}
+
+/// Message shown when the provider needs an API key for dictation.
+fn missing_transcription_key(provider: Provider, action: &str) -> String {
+    format!(
+        "Add a {} API key in Settings > Provider to {action}.",
+        provider.label()
+    )
+}
 impl NotepadApp {
     /// Drain offline dictation deltas. Local Whisper commits each chunk as it
     /// finishes, so every delta is final text.
@@ -464,19 +481,12 @@ impl NotepadApp {
 
     fn start_provider_dictation(&mut self, ctx: &egui::Context) {
         if !provider_stt::supports(self.chat_provider) {
-            self.report_error(format!(
-                "{} doesn't offer transcription. Choose Local in Settings > Dictation or \
-                 switch to Gemini or OpenAI in Settings > Provider.",
-                self.chat_provider.label()
-            ));
+            self.report_error(unsupported_transcription(self.chat_provider));
             return;
         }
         let api_key = self.api_key();
         if api_key.is_empty() {
-            self.report_error(format!(
-                "Add a {} API key in Settings > Provider to dictate.",
-                self.chat_provider.label()
-            ));
+            self.report_error(missing_transcription_key(self.chat_provider, "dictate"));
             return;
         }
         let model = provider_stt::transcription_model(self.chat_provider).to_string();
@@ -571,18 +581,14 @@ impl NotepadApp {
         match self.dictation_source {
             DictationSource::Provider => {
                 if !provider_stt::supports(self.chat_provider) {
-                    self.report_error(format!(
-                        "{} doesn't offer transcription. Choose Local in Settings > Dictation \
-                         or switch to Gemini or OpenAI in Settings > Provider.",
-                        self.chat_provider.label()
-                    ));
+                    self.report_error(unsupported_transcription(self.chat_provider));
                     return;
                 }
                 let api_key = self.api_key();
                 if api_key.is_empty() {
-                    self.report_error(format!(
-                        "Add a {} API key in Settings > Provider to transcribe audio.",
-                        self.chat_provider.label()
+                    self.report_error(missing_transcription_key(
+                        self.chat_provider,
+                        "transcribe audio",
                     ));
                     return;
                 }

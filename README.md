@@ -1,10 +1,10 @@
 # Rusty Notepad
 
 A fast, lightweight Markdown editor for Windows, macOS and Linux. Write on the
-left, see the formatted document on the right, and optionally ask Gemini to
-rewrite or extend it.
+left, see the formatted document on the right, and optionally ask the assistant
+to rewrite or extend it.
 
-![Rusty Notepad with the editor and live preview side by side](assets/screenshot.png)
+![Rusty Notepad with the editor and a styled visual report side by side](assets/screenshot.png)
 
 ## Features
 
@@ -110,9 +110,9 @@ writable). Use `rmd --help` for options.
 The assistant works with Google Gemini, OpenAI, Anthropic, OpenRouter, or
 DeepSeek.
 
-1. Open **Settings → AI** in the top bar.
+1. Open **Settings → Provider** in the top bar.
 2. Pick the active provider and model, and add an API key for each provider you
-   want to use (Gemini keys are available from
+   want to use (for example, Gemini keys are available from
    [Google AI Studio](https://aistudio.google.com/api-keys)).
 3. Type an instruction in the Assistant tab and press **Send** to rewrite or
    extend the document.
@@ -215,7 +215,8 @@ depends on `libasound2` at runtime.
 
 ### Notes
 
-- For local development, `GEMINI_API_KEY` and `GEMINI_MODEL` can be placed in a
+- For local development, provider keys such as `GEMINI_API_KEY` and
+  `OPENAI_API_KEY`, plus matching `*_MODEL` overrides, can be placed in a
   gitignored `.env` file.
 - `vendor/egui_commonmark` is upstream 0.14.0 with small preview rendering
   patches (task-list bullets, configurable line spacing, code-copy UX, and
