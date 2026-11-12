@@ -1,3 +1,12 @@
+//! Application state, services, and UI.
+//!
+//! `components` holds the egui views, `models` holds persisted/runtime state,
+//! and `ai` holds pure assistant infrastructure. The remaining modules are
+//! small, single-purpose services (configuration, keychain, audio,
+//! transcription, theme, templates). Rust modules are plain files, so keeping
+//! them flat is normal; grouping them into a directory is worth it only when a
+//! second related module appears.
+
 use eframe::egui;
 
 pub mod ai;

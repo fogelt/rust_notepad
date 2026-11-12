@@ -215,9 +215,9 @@ depends on `libasound2` at runtime.
 
 ### Notes
 
-- For local development, provider keys such as `GEMINI_API_KEY` and
-  `OPENAI_API_KEY`, plus matching `*_MODEL` overrides, can be placed in a
-  gitignored `.env` file.
+- For local development, copy `.env_example` to `.env` and fill in the provider
+  keys and model overrides you need. Keys saved in the app take priority over
+  environment variables.
 - `vendor/egui_commonmark` is upstream 0.14.0 with small preview rendering
   patches (task-list bullets, configurable line spacing, code-copy UX, and
   spacing after code blocks). See its `PATCH.md` before updating the dependency.
