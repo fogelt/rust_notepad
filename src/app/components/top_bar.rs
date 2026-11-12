@@ -421,6 +421,11 @@ impl NotepadApp {
             SettingsTab::Appearance => 260.0,
             SettingsTab::Provider | SettingsTab::Dictation => 470.0,
         };
+        // Read this before building the menu: a ComboBox closes its popup while
+        // handling the click, so checking afterwards reports it as closed and
+        // treats the click as outside the settings menu.
+        let another_popup_open = ui.ctx().memory(|m| m.any_popup_open());
+
         let area = egui::Area::new(egui::Id::new("settings_menu_popup"))
             .order(egui::Order::Foreground)
             .fixed_pos(position)
@@ -437,13 +442,12 @@ impl NotepadApp {
 
         let popup_rect = area.response.rect;
         let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
-        // ComboBox popups are separate areas; don't treat their clicks as
-        // outside clicks.
-        let another_popup_open = ui.ctx().memory(|m| m.any_popup_open());
+        // Clicks in a ComboBox popup are children of this menu, not outside it.
         let clicked_outside = !another_popup_open
             && ui.ctx().input(|i| i.pointer.any_click())
             && pointer.is_some_and(|pos| !popup_rect.contains(pos) && !button_rect.contains(pos));
-        if clicked_outside || ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        let escape = !another_popup_open && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape));
+        if clicked_outside || escape {
             self.settings_menu_open = false;
         }
     }
