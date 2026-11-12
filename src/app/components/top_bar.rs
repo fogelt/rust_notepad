@@ -6,7 +6,7 @@ use crate::app::models::{DictationSource, SettingsTab};
 use crate::app::provider_stt;
 use crate::app::theme::{
     BG_ELEVATED, BORDER_STRONG, CHEVRON_ANIMATION_TIME, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
-    accent, accent_text, draw_chevron, paint_accent_fill,
+    accent, accent_hovered, accent_text, draw_chevron,
 };
 use eframe::egui;
 use egui_phosphor::regular as icons;
@@ -34,7 +34,8 @@ fn view_tab(
     let hovered = response.hovered();
 
     if *selected {
-        paint_accent_fill(ui.painter(), rect, rounding, hovered);
+        let fill = if hovered { accent_hovered() } else { accent() };
+        ui.painter().rect_filled(rect, rounding, fill);
     } else {
         let fill = if hovered {
             SURFACE_ACTIVE
@@ -80,7 +81,8 @@ fn settings_tab_button(
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     if selected {
-        paint_accent_fill(ui.painter(), rect, rounding, hovered);
+        let fill = if hovered { accent_hovered() } else { accent() };
+        ui.painter().rect_filled(rect, rounding, fill);
     } else {
         let fill = if hovered {
             SURFACE_ACTIVE
