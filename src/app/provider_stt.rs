@@ -402,7 +402,7 @@ mod tests {
         assert!(supports(Provider::Gemini));
         assert!(supports(Provider::OpenAi));
         assert!(!supports(Provider::Anthropic));
-        assert!(!supports(Provider::OpenRouter));
+        assert!(!supports(Provider::Custom));
         assert!(!supports(Provider::DeepSeek));
     }
 

@@ -87,8 +87,8 @@ const DEEPSEEK_MODELS: &[ModelChoice] = &[
 /// Everything the app knows about a provider except how to talk to it.
 ///
 /// Transport lives in `ai::text`; keeping metadata here makes provider work
-/// data-driven and leaves room for a future local/OpenAI-compatible provider
-/// (custom endpoint, no API key) with its own spec.
+/// data-driven and leaves room for a custom OpenAI-compatible endpoint
+/// with its own spec.
 pub struct ProviderSpec {
     pub id: &'static str,
     pub label: &'static str,
@@ -97,6 +97,8 @@ pub struct ProviderSpec {
     pub key_hint: &'static str,
     pub key_url: &'static str,
     pub models: &'static [ModelChoice],
+    /// False for providers that run on the user's machine and need no key.
+    pub requires_api_key: bool,
 }
 
 const SPECS: [ProviderSpec; 5] = [
@@ -108,6 +110,7 @@ const SPECS: [ProviderSpec; 5] = [
         key_hint: "Paste your Gemini API key…",
         key_url: "https://aistudio.google.com/api-keys",
         models: GEMINI_MODELS,
+        requires_api_key: true,
     },
     ProviderSpec {
         id: "openai",
@@ -117,6 +120,7 @@ const SPECS: [ProviderSpec; 5] = [
         key_hint: "Paste your OpenAI API key…",
         key_url: "https://platform.openai.com/api-keys",
         models: OPENAI_MODELS,
+        requires_api_key: true,
     },
     ProviderSpec {
         id: "anthropic",
@@ -126,17 +130,7 @@ const SPECS: [ProviderSpec; 5] = [
         key_hint: "Paste your Anthropic API key…",
         key_url: "https://console.anthropic.com/settings/keys",
         models: ANTHROPIC_MODELS,
-    },
-    ProviderSpec {
-        id: "openrouter",
-        label: "OpenRouter",
-        env_key: "OPENROUTER_API_KEY",
-        env_model: "OPENROUTER_MODEL",
-        key_hint: "Paste your OpenRouter API key…",
-        key_url: "https://openrouter.ai/keys",
-        // OpenRouter has a huge, fast-moving catalog, so the model is entered
-        // by hand instead of guessed at.
-        models: &[],
+        requires_api_key: true,
     },
     ProviderSpec {
         id: "deepseek",
@@ -146,16 +140,27 @@ const SPECS: [ProviderSpec; 5] = [
         key_hint: "Paste your DeepSeek API key…",
         key_url: "https://platform.deepseek.com/api_keys",
         models: DEEPSEEK_MODELS,
+        requires_api_key: true,
+    },
+    ProviderSpec {
+        id: "custom",
+        label: "Custom endpoint",
+        env_key: "CUSTOM_LLM_API_KEY",
+        env_model: "CUSTOM_LLM_MODEL",
+        key_hint: "Optional API key…",
+        // No provider key page: the endpoint can be anything OpenAI-compatible.
+        key_url: "",
+        models: &[],
+        requires_api_key: false,
     },
 ];
 
-/// API key prefixes, ordered so more specific prefixes win (`sk-ant-` and
-/// `sk-or-` before `sk-`).
+/// API key prefixes, ordered so more specific prefixes win (`sk-ant-` before
+/// `sk-`).
 const KEY_PREFIXES: &[(&str, Provider)] = &[
     ("AIza", Provider::Gemini),
     ("AQ.", Provider::Gemini),
     ("sk-ant-", Provider::Anthropic),
-    ("sk-or-", Provider::OpenRouter),
     ("sk-", Provider::OpenAi),
 ];
 
@@ -166,8 +171,8 @@ pub enum Provider {
     Gemini = 0,
     OpenAi = 1,
     Anthropic = 2,
-    OpenRouter = 3,
-    DeepSeek = 4,
+    DeepSeek = 3,
+    Custom = 4,
 }
 
 impl Provider {
@@ -175,8 +180,8 @@ impl Provider {
         Provider::Gemini,
         Provider::OpenAi,
         Provider::Anthropic,
-        Provider::OpenRouter,
         Provider::DeepSeek,
+        Provider::Custom,
     ];
 
     pub fn spec(self) -> &'static ProviderSpec {
@@ -214,6 +219,22 @@ impl Provider {
             .map(|(_, provider)| *provider)
     }
 
+    /// Whether this provider needs an API key at all.
+    pub fn requires_api_key(self) -> bool {
+        self.spec().requires_api_key
+    }
+
+    /// Whether this provider accepts an optional key. Cloud providers require
+    /// one; a custom endpoint may or may not need it.
+    pub fn allows_api_key(self) -> bool {
+        self.requires_api_key() || self == Provider::Custom
+    }
+
+    /// Whether the provider uses a user-configured server URL.
+    pub fn uses_custom_endpoint(self) -> bool {
+        self == Provider::Custom
+    }
+
     /// Environment variable used as a fallback when the field is empty.
     pub fn env_var(self) -> &'static str {
         self.spec().env_key
@@ -236,6 +257,17 @@ impl Provider {
 
     pub fn models(self) -> &'static [ModelChoice] {
         self.spec().models
+    }
+
+    /// Output token budget for a request. Visual reports need more room;
+    /// Gemini and custom endpoints get the smaller caps.
+    pub fn max_output_tokens(self, report: bool) -> u32 {
+        match (self, report) {
+            (Provider::Gemini | Provider::Custom, false) => 2048,
+            (Provider::Gemini | Provider::Custom, true) => 8192,
+            (_, false) => 4096,
+            (_, true) => 16384,
+        }
     }
 
     pub fn default_model(self) -> &'static str {
@@ -270,7 +302,6 @@ mod tests {
             Provider::detect("sk-ant-api03-x"),
             Some(Provider::Anthropic)
         );
-        assert_eq!(Provider::detect("sk-or-v1-x"), Some(Provider::OpenRouter));
         assert_eq!(Provider::detect("sk-proj-x"), Some(Provider::OpenAi));
         assert_eq!(Provider::detect("nonsense"), None);
     }
@@ -286,10 +317,36 @@ mod tests {
     #[test]
     fn every_provider_has_key_metadata() {
         for provider in Provider::ALL {
-            assert!(!provider.env_var().is_empty());
             assert!(!provider.env_model_var().is_empty());
-            assert!(!provider.key_hint().is_empty());
-            assert!(provider.key_url().starts_with("https://"));
+            if provider.requires_api_key() {
+                assert!(!provider.env_var().is_empty());
+                assert!(!provider.key_hint().is_empty());
+                assert!(provider.key_url().starts_with("https://"));
+            } else if provider.allows_api_key() {
+                // Optional key: an environment fallback exists, but there is
+                // no provider key page to link to.
+                assert!(!provider.env_var().is_empty());
+                assert!(!provider.key_hint().is_empty());
+                assert!(provider.key_url().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn custom_provider_accepts_an_optional_key() {
+        let custom = Provider::Custom;
+        assert!(!custom.requires_api_key());
+        assert!(custom.allows_api_key());
+        assert!(custom.uses_custom_endpoint());
+        assert!(custom.models().is_empty());
+        assert_eq!(Provider::from_id("custom"), Some(custom));
+        assert_eq!(custom.env_model_var(), "CUSTOM_LLM_MODEL");
+        for provider in Provider::ALL {
+            if provider != Provider::Custom {
+                assert!(provider.requires_api_key());
+                assert!(provider.allows_api_key());
+                assert!(!provider.uses_custom_endpoint());
+            }
         }
     }
 

@@ -101,6 +101,9 @@ pub struct AppConfig {
     pub dictation_model: String,
     #[serde(default)]
     pub dictation_source: String,
+    /// User-configured OpenAI-compatible server for the local provider.
+    #[serde(default)]
+    pub custom_endpoint: String,
     #[serde(default)]
     pub ui: UiSettings,
 }
@@ -129,12 +132,18 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn load() -> AppConfig {
-    let mut cfg: AppConfig = std::fs::read_to_string(config_path())
+    let mut cfg = std::fs::read_to_string(config_path())
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .map(|text| parse(&text))
         .unwrap_or_default();
     cfg.ui.normalize();
     cfg
+}
+
+/// Parse settings, tolerating a UTF-8 BOM added by some editors.
+fn parse(text: &str) -> AppConfig {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    serde_json::from_str(text).unwrap_or_default()
 }
 
 /// Write settings; returns the file path on success.
@@ -161,6 +170,7 @@ mod tests {
             model: "gemini-3.8-flash".to_string(),
             dictation_model: "base".to_string(),
             dictation_source: "local".to_string(),
+            custom_endpoint: String::new(),
             ui: UiSettings {
                 editor_font: EditorFont::Monospace,
                 editor_font_size: 17.0,
@@ -211,5 +221,12 @@ mod tests {
     fn pick_prefers_stored_over_env() {
         assert_eq!(pick("stored", "DEFINITELY_UNSET_VAR_XYZ"), "stored");
         assert_eq!(pick("  ", "DEFINITELY_UNSET_VAR_XYZ"), "");
+    }
+
+    #[test]
+    fn parses_config_with_utf8_bom() {
+        let cfg = parse("\u{feff}{\"provider\":\"local\",\"model\":\"llama3.1\"}");
+        assert_eq!(cfg.provider, "local");
+        assert_eq!(cfg.model, "llama3.1");
     }
 }

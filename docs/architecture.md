@@ -62,16 +62,17 @@ src/app/
 3. If it supports transcription, update `provider_stt`.
 4. Add the key prefix to `KEY_PREFIXES` if the provider has a recognizable one.
 
-### Local / OpenAI-compatible (planned)
+### Custom / OpenAI-compatible provider
 
-The intended local-LLM mode is an endpoint-only provider speaking the OpenAI
-chat-completions API (Ollama, LM Studio, llama.cpp, vLLM):
+`Provider::Custom` speaks the OpenAI chat-completions API, which covers Ollama,
+LM Studio, llama.cpp, vLLM, and hosted gateways that use the same shape:
 
-- `ChatCompletionsBackend` already handles the request and response shape; the
-  endpoint will come from user configuration and the `Authorization` header
-  becomes optional.
-- `ProviderSpec` will gain `requires_api_key: false` and an endpoint field, so
-  settings can show a URL instead of the key controls.
+- The server URL lives in config (`custom_endpoint`); `custom_chat_endpoint`
+  accepts a bare host, a `/v1` base, or the full `/v1/chat/completions` URL.
+- `ChatCompletionsBackend` sends `Authorization` only when a key is configured,
+  so local servers work without one while gateways can still require a key.
+- `ProviderSpec::requires_api_key` is false and `allows_api_key` is true: the
+  settings key controls are optional rather than hidden.
 - `provider_stt` stays provider-specific; local chat models are not audio
   transcribers.
 

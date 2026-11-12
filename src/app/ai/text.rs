@@ -84,19 +84,18 @@ impl TextBackend for AnthropicBackend {
     }
 }
 
-/// OpenAI-compatible chat completions transport, shared by OpenRouter and
-/// DeepSeek.
-///
-/// A future local provider (Ollama, LM Studio, llama.cpp) can reuse this with
-/// a user-configured endpoint; only the endpoint field needs to become owned
-/// (a `String`/`Cow`) and the Authorization header conditional.
-struct ChatCompletionsBackend {
+/// OpenAI-compatible chat completions transport, shared by DeepSeek and the
+/// custom endpoint provider (Ollama, LM Studio, llama.cpp, vLLM, or any hosted
+/// gateway that speaks the same API).
+struct ChatCompletionsBackend<'a> {
     name: &'static str,
-    endpoint: &'static str,
+    endpoint: &'a str,
     omit_temperature_for_reasoner: bool,
+    requires_auth: bool,
+    timeout_secs: u64,
 }
 
-impl TextBackend for ChatCompletionsBackend {
+impl TextBackend for ChatCompletionsBackend<'_> {
     fn generate(&self, request: &GenerationRequest<'_>) -> Result<String, String> {
         let mut body = serde_json::json!({
             "model": request.model.trim(),
@@ -108,44 +107,72 @@ impl TextBackend for ChatCompletionsBackend {
         if !omit_temperature {
             body["temperature"] = serde_json::json!(request.temperature);
         }
-        let resp = http_client()?
-            .post(self.endpoint)
-            .bearer_auth(request.api_key)
-            .json(&body)
-            .send()
-            .map_err(|e| format!("Request failed: {e}"))?;
+        let client = http_client_with_timeout(std::time::Duration::from_secs(self.timeout_secs))?;
+        let mut builder = client.post(self.endpoint).json(&body);
+        // A custom endpoint may require a key even though the app does not.
+        if self.requires_auth || !request.api_key.is_empty() {
+            builder = builder.bearer_auth(request.api_key);
+        }
+        let resp = builder.send().map_err(|e| format!("Request failed: {e}"))?;
         let json = check_response(resp, self.name)?;
         chat_completion_text(&json)
             .ok_or_else(|| format!("{} returned an empty response.", self.name))
     }
 }
 
-const OPENROUTER_BACKEND: ChatCompletionsBackend = ChatCompletionsBackend {
-    name: "OpenRouter",
-    endpoint: "https://openrouter.ai/api/v1/chat/completions",
-    omit_temperature_for_reasoner: false,
-};
+fn backend_for<'a>(
+    provider: Provider,
+    custom_endpoint: Option<&'a str>,
+) -> Result<Box<dyn TextBackend + 'a>, String> {
+    Ok(match provider {
+        Provider::Gemini => Box::new(GeminiBackend),
+        Provider::OpenAi => Box::new(OpenAiBackend),
+        Provider::Anthropic => Box::new(AnthropicBackend),
+        Provider::DeepSeek => Box::new(ChatCompletionsBackend {
+            name: "DeepSeek",
+            endpoint: "https://api.deepseek.com/chat/completions",
+            // The reasoner model ignores temperature, so only send it for chat.
+            omit_temperature_for_reasoner: true,
+            requires_auth: true,
+            timeout_secs: 120,
+        }),
+        Provider::Custom => {
+            let endpoint = custom_endpoint.ok_or_else(|| {
+                String::from("Set a custom endpoint URL in Settings > Provider first.")
+            })?;
+            Box::new(ChatCompletionsBackend {
+                name: "Custom endpoint",
+                endpoint,
+                omit_temperature_for_reasoner: false,
+                // Optional key: sent only when one is configured.
+                requires_auth: false,
+                // CPU inference can take minutes for a visual report.
+                timeout_secs: 600,
+            })
+        }
+    })
+}
 
-const DEEPSEEK_BACKEND: ChatCompletionsBackend = ChatCompletionsBackend {
-    name: "DeepSeek",
-    endpoint: "https://api.deepseek.com/chat/completions",
-    // The reasoner model ignores temperature, so only send it for chat.
-    omit_temperature_for_reasoner: true,
-};
-
-const GEMINI: &dyn TextBackend = &GeminiBackend;
-const OPENAI: &dyn TextBackend = &OpenAiBackend;
-const ANTHROPIC: &dyn TextBackend = &AnthropicBackend;
-const OPENROUTER: &dyn TextBackend = &OPENROUTER_BACKEND;
-const DEEPSEEK: &dyn TextBackend = &DEEPSEEK_BACKEND;
-
-fn backend_for(provider: Provider) -> &'static dyn TextBackend {
-    match provider {
-        Provider::Gemini => GEMINI,
-        Provider::OpenAi => OPENAI,
-        Provider::Anthropic => ANTHROPIC,
-        Provider::OpenRouter => OPENROUTER,
-        Provider::DeepSeek => DEEPSEEK,
+/// Normalize an OpenAI-compatible server URL to a chat completions endpoint.
+/// Accepts a bare host, `.../v1`, or the full `.../v1/chat/completions`.
+fn custom_chat_endpoint(base: &str) -> Result<String, String> {
+    let base = base.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err(String::from(
+            "Set a custom endpoint URL in Settings > Provider first.",
+        ));
+    }
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err(String::from(
+            "The custom endpoint URL must start with http:// or https://.",
+        ));
+    }
+    if base.ends_with("/chat/completions") {
+        Ok(base.to_string())
+    } else if base.ends_with("/v1") {
+        Ok(format!("{base}/chat/completions"))
+    } else {
+        Ok(format!("{base}/v1/chat/completions"))
     }
 }
 
@@ -159,7 +186,13 @@ pub(crate) fn generate_text(
     model: &str,
     max_output_tokens: u32,
     temperature: f32,
+    custom_endpoint: Option<&str>,
 ) -> Result<String, String> {
+    let normalized = if provider.uses_custom_endpoint() {
+        Some(custom_chat_endpoint(custom_endpoint.unwrap_or_default())?)
+    } else {
+        None
+    };
     let request = GenerationRequest {
         prompt,
         api_key,
@@ -167,7 +200,7 @@ pub(crate) fn generate_text(
         max_output_tokens,
         temperature,
     };
-    let text = backend_for(provider).generate(&request)?;
+    let text = backend_for(provider, normalized.as_deref())?.generate(&request)?;
     Ok(strip_code_fence(&text))
 }
 
@@ -191,9 +224,15 @@ fn strip_code_fence(text: &str) -> String {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client, String> {
+    http_client_with_timeout(std::time::Duration::from_secs(120))
+}
+
+fn http_client_with_timeout(
+    timeout: std::time::Duration,
+) -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(timeout)
         .build()
         .map_err(|e| format!("Request failed: {e}"))
 }
@@ -397,5 +436,112 @@ mod tests {
             }]
         });
         assert_eq!(response_text(&json).as_deref(), Some("make it a table"));
+    }
+
+    #[test]
+    fn normalizes_local_server_urls() {
+        assert_eq!(
+            custom_chat_endpoint("http://localhost:11434/v1").unwrap(),
+            "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            custom_chat_endpoint("http://localhost:11434/").unwrap(),
+            "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            custom_chat_endpoint("http://localhost:8080/v1/chat/completions").unwrap(),
+            "http://localhost:8080/v1/chat/completions"
+        );
+        assert!(custom_chat_endpoint("").is_err());
+        assert!(custom_chat_endpoint("localhost:1234/v1").is_err());
+    }
+
+    fn custom_endpoint_roundtrip(api_key: &str) -> (String, String) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::Duration;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let port = listener.local_addr().expect("addr").port();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut buffer = Vec::new();
+            let mut chunk = [0_u8; 4096];
+            loop {
+                let read = stream.read(&mut chunk).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
+                let text = String::from_utf8_lossy(&buffer);
+                if let Some(headers_end) = text.find("\r\n\r\n") {
+                    let mut content_length = 0;
+                    for line in text[..headers_end].lines() {
+                        if let Some((name, value)) = line.split_once(':')
+                            && name.eq_ignore_ascii_case("content-length")
+                        {
+                            content_length = value.trim().parse().unwrap_or(0);
+                        }
+                    }
+                    if buffer.len() >= headers_end + 4 + content_length {
+                        break;
+                    }
+                }
+            }
+            let _ = tx.send(String::from_utf8_lossy(&buffer).to_string());
+            let body = "{\"choices\":[{\"message\":{\"content\":\"local reply\"}}]}";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+        });
+
+        let endpoint = format!("http://127.0.0.1:{port}/v1");
+        let reply = generate_text(
+            Provider::Custom,
+            "say hello",
+            api_key,
+            "test-model",
+            64,
+            0.2,
+            Some(&endpoint),
+        )
+        .expect("custom generation");
+
+        let request = rx.recv_timeout(Duration::from_secs(5)).expect("request");
+        (reply, request)
+    }
+
+    #[test]
+    fn custom_openai_server_roundtrip() {
+        let (reply, request) = custom_endpoint_roundtrip("");
+        assert_eq!(reply, "local reply");
+        assert!(
+            request.starts_with("POST /v1/chat/completions "),
+            "{request}"
+        );
+        assert!(
+            !request.to_ascii_lowercase().contains("authorization:"),
+            "{request}"
+        );
+        assert!(request.contains("\"model\":\"test-model\""), "{request}");
+        assert!(request.contains("\"messages\""), "{request}");
+    }
+
+    #[test]
+    fn custom_endpoint_sends_an_optional_key() {
+        let (_, request) = custom_endpoint_roundtrip("secret-key");
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer secret-key"),
+            "{request}"
+        );
     }
 }

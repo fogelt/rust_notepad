@@ -597,7 +597,7 @@ impl NotepadApp {
         ui.label(egui::RichText::new("Choose provider").strong());
         ui.weak(
             "Click a provider to use it. Keys are stored in the system keychain and never \
-             shown again.",
+             shown again. Custom endpoints need a URL; a key is optional.",
         );
         let rows: Vec<_> = Provider::ALL
             .iter()
@@ -655,7 +655,15 @@ impl NotepadApp {
                             }
                         });
                         table_cell(ui, status_w, |ui| {
-                            if stored {
+                            if !provider.requires_api_key() {
+                                if stored {
+                                    ui.label(egui::RichText::new("Saved").small().color(ACCENT));
+                                } else if provider.allows_api_key() {
+                                    ui.label(egui::RichText::new("Optional").small().weak());
+                                } else {
+                                    ui.label(egui::RichText::new("No key needed").small().weak());
+                                }
+                            } else if stored {
                                 ui.label(egui::RichText::new("Saved").small().color(ACCENT));
                             } else if available {
                                 ui.label(egui::RichText::new("From environment").small().weak());
@@ -664,45 +672,51 @@ impl NotepadApp {
                             }
                         });
                         let actions = table_cell(ui, actions_w, |ui| {
-                            ui.horizontal(|ui| {
-                                if table_icon_button(
-                                    ui,
-                                    icons::ARROW_SQUARE_OUT,
-                                    "Get an API key",
-                                    true,
-                                ) {
-                                    let _ = webbrowser::open(provider.key_url());
-                                }
-                                if stored {
-                                    if table_icon_button(
-                                        ui,
-                                        icons::PENCIL_SIMPLE,
-                                        "Replace key",
-                                        true,
-                                    ) {
+                            if provider.allows_api_key() {
+                                ui.horizontal(|ui| {
+                                    if !provider.key_url().is_empty()
+                                        && table_icon_button(
+                                            ui,
+                                            icons::ARROW_SQUARE_OUT,
+                                            "Get an API key",
+                                            true,
+                                        )
+                                    {
+                                        let _ = webbrowser::open(provider.key_url());
+                                    }
+                                    if stored {
+                                        if table_icon_button(
+                                            ui,
+                                            icons::PENCIL_SIMPLE,
+                                            "Replace key",
+                                            true,
+                                        ) {
+                                            self.key_edit = Some(provider);
+                                            self.key_input.clear();
+                                        }
+                                        if table_icon_button(ui, icons::TRASH, "Remove key", true) {
+                                            match crate::app::keys::delete(provider) {
+                                                Ok(()) => {
+                                                    self.stored_keys.remove(&provider);
+                                                    self.key_error = None;
+                                                    self.status_message = format!(
+                                                        "{} API key removed.",
+                                                        provider.label()
+                                                    );
+                                                }
+                                                Err(err) => self.key_error = Some(err),
+                                            }
+                                        }
+                                    } else if table_icon_button(ui, icons::KEY, "Add key", true) {
                                         self.key_edit = Some(provider);
                                         self.key_input.clear();
                                     }
-                                    if table_icon_button(ui, icons::TRASH, "Remove key", true) {
-                                        match crate::app::keys::delete(provider) {
-                                            Ok(()) => {
-                                                self.stored_keys.remove(&provider);
-                                                self.key_error = None;
-                                                self.status_message = format!(
-                                                    "{} API key removed.",
-                                                    provider.label()
-                                                );
-                                            }
-                                            Err(err) => self.key_error = Some(err),
-                                        }
-                                    }
-                                } else if table_icon_button(ui, icons::KEY, "Add key", true) {
-                                    self.key_edit = Some(provider);
-                                    self.key_input.clear();
-                                }
-                            });
+                                });
+                            }
                         });
-                        actions_rect = actions.rect;
+                        if provider.requires_api_key() {
+                            actions_rect = actions.rect;
+                        }
                     });
                 });
             if active {
@@ -744,7 +758,7 @@ impl NotepadApp {
             }
         }
 
-        if let Some(provider) = self.key_edit {
+        if let Some(provider) = self.key_edit.filter(|provider| provider.allows_api_key()) {
             ui.add_space(4.0);
             ui.label(format!("{} API key", provider.label()));
             let mut save = false;
@@ -784,10 +798,31 @@ impl NotepadApp {
             ui.colored_label(ui.visuals().error_fg_color, err);
         }
 
+        if self.chat_provider.uses_custom_endpoint() {
+            ui.separator();
+            ui.label(egui::RichText::new("Endpoint URL").strong());
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.custom_endpoint)
+                        .hint_text("http://localhost:11434/v1")
+                        .desired_width(f32::INFINITY),
+                )
+                .changed()
+            {
+                self.save_assistant_settings();
+            }
+            ui.weak("OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, vLLM).");
+        }
+
         ui.separator();
         ui.label(egui::RichText::new("Model").strong());
         let models = self.chat_provider.models();
         let mut model_changed = false;
+        let model_hint = if self.chat_provider.uses_custom_endpoint() {
+            "Model ID, e.g. llama3.1"
+        } else {
+            "Model ID"
+        };
         let preset_width = if models.is_empty() { 0.0 } else { 96.0 };
         let field_width = (ui.available_width()
             - if models.is_empty() {
@@ -800,7 +835,7 @@ impl NotepadApp {
             if ui
                 .add_sized(
                     [field_width, 24.0],
-                    egui::TextEdit::singleline(&mut self.chat_model).hint_text("Model ID"),
+                    egui::TextEdit::singleline(&mut self.chat_model).hint_text(model_hint),
                 )
                 .changed()
             {
@@ -846,7 +881,11 @@ impl NotepadApp {
         if model_changed {
             self.save_assistant_settings();
         }
-        ui.weak("Enter any model ID supported by the provider, or pick a preset.");
+        if self.chat_provider.uses_custom_endpoint() {
+            ui.weak("Enter the exact model name served by your custom endpoint.");
+        } else {
+            ui.weak("Enter any model ID supported by the provider, or pick a preset.");
+        }
     }
 
     fn show_dictation_settings(&mut self, ui: &mut egui::Ui) {

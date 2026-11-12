@@ -123,6 +123,8 @@ pub struct NotepadApp {
     /// When the current visual-report request started, for the elapsed timer.
     pub html_started: Option<Instant>,
     pub chat_model: String,
+    /// OpenAI-compatible server URL for the local provider.
+    pub custom_endpoint: String,
     /// Provider used for assistant text and visual reports.
     pub chat_provider: crate::app::ai::provider::Provider,
     /// Providers with a key saved in the OS credential store.
@@ -174,9 +176,11 @@ impl NotepadApp {
         self.local_dictation.is_some() || self.provider_dictation.is_some()
     }
 
-    /// Whether a provider has a key in the keychain or its environment.
+    /// Whether a provider can be used without another key prompt. Local
+    /// servers need no key at all.
     pub fn has_api_key(&self, provider: crate::app::ai::provider::Provider) -> bool {
-        self.stored_keys.contains(&provider)
+        !provider.requires_api_key()
+            || self.stored_keys.contains(&provider)
             || !crate::app::config::pick("", provider.env_var()).is_empty()
     }
 
@@ -253,12 +257,30 @@ impl NotepadApp {
 impl Default for NotepadApp {
     fn default() -> Self {
         // Stored settings win; environment (.env) is the fallback.
-        let stored = crate::app::config::load();
+        let mut stored = crate::app::config::load();
         use crate::app::ai::provider::Provider;
         // An explicit provider wins; otherwise guess from the stored key.
-        let provider = Provider::from_id(&stored.provider)
+        let mut provider = Provider::from_id(&stored.provider)
             .or_else(|| Provider::detect(&stored.api_key))
             .unwrap_or_default();
+        let mut custom_endpoint =
+            crate::app::config::pick(&stored.custom_endpoint, "CUSTOM_LLM_ENDPOINT");
+        // v0.3.4 exposed OpenRouter directly; it is now a custom endpoint.
+        if stored.provider.eq_ignore_ascii_case("openrouter") {
+            provider = Provider::Custom;
+            if custom_endpoint.is_empty() {
+                custom_endpoint = String::from("https://openrouter.ai/api/v1");
+            }
+            if !crate::app::keys::has(Provider::Custom)
+                && let Some(key) = crate::app::keys::load_named("openrouter")
+            {
+                let _ = crate::app::keys::store(Provider::Custom, &key);
+                let _ = crate::app::keys::delete_named("openrouter");
+            }
+            stored.provider = String::from("custom");
+            stored.custom_endpoint = custom_endpoint.clone();
+            let _ = crate::app::config::save(&stored);
+        }
         let dictation_model = crate::app::local_stt::resolve_model(&stored.dictation_model);
         let dictation_source =
             DictationSource::from_id(&stored.dictation_source).unwrap_or_else(|| {
@@ -296,6 +318,7 @@ impl Default for NotepadApp {
         // keys are reported separately in Settings.
         let stored_keys: std::collections::HashSet<Provider> = Provider::ALL
             .into_iter()
+            .filter(|provider| provider.allows_api_key())
             .filter(|provider| crate::app::keys::has(*provider))
             .collect();
         Self {
@@ -317,6 +340,7 @@ impl Default for NotepadApp {
             html_error: None,
             html_started: None,
             chat_model: model,
+            custom_endpoint,
             chat_provider: provider,
             stored_keys,
             key_edit: None,

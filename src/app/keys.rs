@@ -8,15 +8,24 @@ use crate::app::ai::provider::Provider;
 
 const SERVICE: &str = "rust_notepad";
 
-fn entry(provider: Provider) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, &format!("api-key-{}", provider.id()))
+fn entry_named(id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SERVICE, &format!("api-key-{id}"))
         .map_err(|err| format!("Could not open the system keychain: {err}"))
+}
+
+fn entry(provider: Provider) -> Result<keyring::Entry, String> {
+    entry_named(provider.id())
 }
 
 /// Read a stored key. Missing credentials and keychain failures both return
 /// `None`; callers treat that as "no key configured".
 pub fn load(provider: Provider) -> Option<String> {
-    let entry = entry(provider).ok()?;
+    load_named(provider.id())
+}
+
+/// Read a key by its raw keychain id. Used once to migrate legacy providers.
+pub(crate) fn load_named(id: &str) -> Option<String> {
+    let entry = entry_named(id).ok()?;
     match entry.get_password() {
         Ok(key) if !key.trim().is_empty() => Some(key),
         Ok(_) => None,
@@ -37,7 +46,12 @@ pub fn store(provider: Provider, key: &str) -> Result<(), String> {
 }
 
 pub fn delete(provider: Provider) -> Result<(), String> {
-    match entry(provider)?.delete_credential() {
+    delete_named(provider.id())
+}
+
+/// Remove a key by its raw keychain id.
+pub(crate) fn delete_named(id: &str) -> Result<(), String> {
+    match entry_named(id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(err) => Err(format!(
             "Could not remove the key from the system keychain: {err}"
