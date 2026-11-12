@@ -111,8 +111,9 @@ The assistant works with Google Gemini, OpenAI, Anthropic, OpenRouter, or
 DeepSeek.
 
 1. Open **Settings → Provider** in the top bar.
-2. Pick the active provider and model, and add an API key for each provider you
-   want to use (for example, Gemini keys are available from
+2. Pick the active provider and model, or type any model ID the provider
+   supports, and add an API key for each provider you want to use (for example,
+   Gemini keys are available from
    [Google AI Studio](https://aistudio.google.com/api-keys)).
 3. Type an instruction in the Assistant tab and press **Send** to rewrite or
    extend the document.

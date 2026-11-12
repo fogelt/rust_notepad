@@ -84,60 +84,60 @@ impl TextBackend for AnthropicBackend {
     }
 }
 
-/// OpenRouter exposes an OpenAI-compatible chat completions endpoint.
-struct OpenRouterBackend;
-
-impl TextBackend for OpenRouterBackend {
-    fn generate(&self, request: &GenerationRequest<'_>) -> Result<String, String> {
-        let body = serde_json::json!({
-            "model": request.model.trim(),
-            "messages": [{ "role": "user", "content": request.prompt }],
-            "max_tokens": request.max_output_tokens,
-            "temperature": request.temperature,
-        });
-        let resp = http_client()?
-            .post("https://openrouter.ai/api/v1/chat/completions")
-            .bearer_auth(request.api_key)
-            .json(&body)
-            .send()
-            .map_err(|e| format!("Request failed: {e}"))?;
-        let json = check_response(resp, "OpenRouter")?;
-        chat_completion_text(&json)
-            .ok_or_else(|| "OpenRouter returned an empty response.".to_string())
-    }
+/// OpenAI-compatible chat completions transport, shared by OpenRouter and
+/// DeepSeek.
+///
+/// A future local provider (Ollama, LM Studio, llama.cpp) can reuse this with
+/// a user-configured endpoint; only the endpoint field needs to become owned
+/// (a `String`/`Cow`) and the Authorization header conditional.
+struct ChatCompletionsBackend {
+    name: &'static str,
+    endpoint: &'static str,
+    omit_temperature_for_reasoner: bool,
 }
 
-/// DeepSeek is OpenAI-compatible. The reasoner model ignores temperature, so it
-/// is only sent for the chat model.
-struct DeepSeekBackend;
-
-impl TextBackend for DeepSeekBackend {
+impl TextBackend for ChatCompletionsBackend {
     fn generate(&self, request: &GenerationRequest<'_>) -> Result<String, String> {
         let mut body = serde_json::json!({
             "model": request.model.trim(),
             "messages": [{ "role": "user", "content": request.prompt }],
             "max_tokens": request.max_output_tokens,
         });
-        if !request.model.contains("reasoner") {
+        let omit_temperature =
+            self.omit_temperature_for_reasoner && request.model.contains("reasoner");
+        if !omit_temperature {
             body["temperature"] = serde_json::json!(request.temperature);
         }
         let resp = http_client()?
-            .post("https://api.deepseek.com/chat/completions")
+            .post(self.endpoint)
             .bearer_auth(request.api_key)
             .json(&body)
             .send()
             .map_err(|e| format!("Request failed: {e}"))?;
-        let json = check_response(resp, "DeepSeek")?;
+        let json = check_response(resp, self.name)?;
         chat_completion_text(&json)
-            .ok_or_else(|| "DeepSeek returned an empty response.".to_string())
+            .ok_or_else(|| format!("{} returned an empty response.", self.name))
     }
 }
+
+const OPENROUTER_BACKEND: ChatCompletionsBackend = ChatCompletionsBackend {
+    name: "OpenRouter",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    omit_temperature_for_reasoner: false,
+};
+
+const DEEPSEEK_BACKEND: ChatCompletionsBackend = ChatCompletionsBackend {
+    name: "DeepSeek",
+    endpoint: "https://api.deepseek.com/chat/completions",
+    // The reasoner model ignores temperature, so only send it for chat.
+    omit_temperature_for_reasoner: true,
+};
 
 const GEMINI: &dyn TextBackend = &GeminiBackend;
 const OPENAI: &dyn TextBackend = &OpenAiBackend;
 const ANTHROPIC: &dyn TextBackend = &AnthropicBackend;
-const OPENROUTER: &dyn TextBackend = &OpenRouterBackend;
-const DEEPSEEK: &dyn TextBackend = &DeepSeekBackend;
+const OPENROUTER: &dyn TextBackend = &OPENROUTER_BACKEND;
+const DEEPSEEK: &dyn TextBackend = &DEEPSEEK_BACKEND;
 
 fn backend_for(provider: Provider) -> &'static dyn TextBackend {
     match provider {

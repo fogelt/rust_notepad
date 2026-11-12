@@ -36,7 +36,7 @@ src/app/
   audio.rs             microphone capture and resampling
   local_stt.rs         Whisper model catalog, download, inference
   provider_stt.rs      Gemini Live / OpenAI transcription
-  live.rs              Gemini Live WebSocket client
+  gemini_live.rs       Gemini Live WebSocket client
   config.rs            JSON settings (no API keys)
   keys.rs              OS keychain access
   theme.rs             colors, spacing, shared widgets
@@ -50,6 +50,30 @@ src/app/
   adding a provider does not touch request/response plumbing.
 - `components::ai_chat` only orchestrates: it moves results between channels
   and app state, and renders the panel. It never builds HTTP requests itself.
+- Any provider accepts a hand-typed model ID; curated models are only presets.
+
+### Adding a provider
+
+1. Add the enum variant in `ai/provider.rs` and one `ProviderSpec` entry in
+   `SPECS` (id, labels, env vars, key metadata, curated models).
+2. Add its transport in `ai/text.rs`. OpenAI-compatible servers share
+   `ChatCompletionsBackend`; Gemini, OpenAI Responses, and Anthropic have their
+   own backends.
+3. If it supports transcription, update `provider_stt`.
+4. Add the key prefix to `KEY_PREFIXES` if the provider has a recognizable one.
+
+### Local / OpenAI-compatible (planned)
+
+The intended local-LLM mode is an endpoint-only provider speaking the OpenAI
+chat-completions API (Ollama, LM Studio, llama.cpp, vLLM):
+
+- `ChatCompletionsBackend` already handles the request and response shape; the
+  endpoint will come from user configuration and the `Authorization` header
+  becomes optional.
+- `ProviderSpec` will gain `requires_api_key: false` and an endpoint field, so
+  settings can show a URL instead of the key controls.
+- `provider_stt` stays provider-specific; local chat models are not audio
+  transcribers.
 
 ### Dictation (`app/dictation`)
 
