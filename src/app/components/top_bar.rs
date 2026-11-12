@@ -5,8 +5,8 @@ use crate::app::local_stt;
 use crate::app::models::{DictationSource, SettingsTab};
 use crate::app::provider_stt;
 use crate::app::theme::{
-    ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BG_ELEVATED, BORDER_STRONG, CHEVRON_ANIMATION_TIME,
-    SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED, draw_chevron,
+    BG_ELEVATED, BORDER_STRONG, CHEVRON_ANIMATION_TIME, SURFACE, SURFACE_ACTIVE, SURFACE_HOVERED,
+    accent, accent_hovered, accent_text, draw_chevron,
 };
 use eframe::egui;
 use egui_phosphor::regular as icons;
@@ -34,7 +34,7 @@ fn view_tab(
     let hovered = response.hovered();
 
     let fill = if *selected {
-        if hovered { ACCENT_HOVERED } else { ACCENT }
+        if hovered { accent_hovered() } else { accent() }
     } else if hovered {
         SURFACE_ACTIVE
     } else {
@@ -43,7 +43,7 @@ fn view_tab(
     ui.painter().rect_filled(rect, rounding, fill);
 
     let text_color = if *selected {
-        ACCENT_TEXT
+        accent_text()
     } else if hovered {
         egui::Color32::WHITE
     } else {
@@ -78,7 +78,7 @@ fn settings_tab_button(
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     let fill = if selected {
-        if hovered { ACCENT_HOVERED } else { ACCENT }
+        if hovered { accent_hovered() } else { accent() }
     } else if hovered {
         SURFACE_ACTIVE
     } else {
@@ -86,7 +86,7 @@ fn settings_tab_button(
     };
     ui.painter().rect_filled(rect, rounding, fill);
     let color = if selected {
-        ACCENT_TEXT
+        accent_text()
     } else if hovered {
         egui::Color32::WHITE
     } else {
@@ -587,6 +587,27 @@ impl NotepadApp {
         }
 
         ui.separator();
+        ui.label(egui::RichText::new("Accent").strong());
+        let toggle = ui.checkbox(
+            &mut self.ui_settings.use_provider_color,
+            "Use provider color scheme",
+        );
+        if toggle.changed() {
+            self.save_ui_settings();
+        }
+        let [r, g, b] = self.chat_provider.accent_rgb();
+        let color = egui::Color32::from_rgb(r, g, b);
+        ui.horizontal(|ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+            ui.painter()
+                .rect_filled(rect, egui::Rounding::same(3.0), color);
+            ui.weak(format!("{} brand color", self.chat_provider.label()));
+        });
+        if !self.ui_settings.use_provider_color {
+            ui.weak("Using the default blue accent.");
+        }
+
+        ui.separator();
         if ui.button("Reset appearance").clicked() {
             self.ui_settings = UiSettings::default();
             self.save_ui_settings();
@@ -648,7 +669,9 @@ impl NotepadApp {
                         table_cell(ui, provider_w, |ui| {
                             if active {
                                 ui.label(
-                                    egui::RichText::new(provider.label()).color(ACCENT).strong(),
+                                    egui::RichText::new(provider.label())
+                                        .color(accent())
+                                        .strong(),
                                 );
                             } else {
                                 ui.label(provider.label());
@@ -657,14 +680,14 @@ impl NotepadApp {
                         table_cell(ui, status_w, |ui| {
                             if !provider.requires_api_key() {
                                 if stored {
-                                    ui.label(egui::RichText::new("Saved").small().color(ACCENT));
+                                    ui.label(egui::RichText::new("Saved").small().color(accent()));
                                 } else if provider.allows_api_key() {
                                     ui.label(egui::RichText::new("Optional").small().weak());
                                 } else {
                                     ui.label(egui::RichText::new("No key needed").small().weak());
                                 }
                             } else if stored {
-                                ui.label(egui::RichText::new("Saved").small().color(ACCENT));
+                                ui.label(egui::RichText::new("Saved").small().color(accent()));
                             } else if available {
                                 ui.label(egui::RichText::new("From environment").small().weak());
                             } else {
@@ -723,7 +746,7 @@ impl NotepadApp {
                 ui.painter().rect_stroke(
                     row.response.rect,
                     6.0,
-                    egui::Stroke::new(1.0_f32, ACCENT),
+                    egui::Stroke::new(1.0_f32, accent()),
                 );
             }
             let pointer_over_actions = ui
@@ -892,7 +915,7 @@ impl NotepadApp {
                             CHEVRON_ANIMATION_TIME,
                         );
                         let color = if is_open || ui.rect_contains_pointer(rect) {
-                            ACCENT
+                            accent()
                         } else {
                             visuals.fg_stroke.color
                         };
@@ -1067,7 +1090,7 @@ impl NotepadApp {
                         ui.spacing_mut().item_spacing.x = cell_gap;
                         table_cell(ui, model_w, |ui| {
                             let label = if active {
-                                egui::RichText::new(model.label).color(ACCENT).strong()
+                                egui::RichText::new(model.label).color(accent()).strong()
                             } else {
                                 egui::RichText::new(model.label)
                             };
@@ -1084,7 +1107,7 @@ impl NotepadApp {
                         });
                         table_cell(ui, status_w, |ui| {
                             if installed {
-                                ui.label(egui::RichText::new("Installed").small().color(ACCENT));
+                                ui.label(egui::RichText::new("Installed").small().color(accent()));
                             } else if downloading {
                                 ui.label(egui::RichText::new("Downloading").small().weak());
                             } else {
@@ -1149,7 +1172,7 @@ impl NotepadApp {
                 ui.painter().rect_stroke(
                     row.response.rect,
                     6.0,
-                    egui::Stroke::new(1.0_f32, ACCENT),
+                    egui::Stroke::new(1.0_f32, accent()),
                 );
             }
             let pointer_over_actions = ui
@@ -1186,7 +1209,7 @@ impl NotepadApp {
                     .desired_width(ui.available_width())
                     .desired_height(6.0)
                     .rounding(3.0)
-                    .fill(ACCENT),
+                    .fill(accent()),
             );
             ui.weak(format!(
                 "{} · {} of {}",
@@ -1273,7 +1296,11 @@ fn settings_menu_button(ui: &mut egui::Ui, open: bool) -> (egui::Rect, egui::Res
                 slot.center().y,
             ),
             flip,
-            if open || hovered { ACCENT } else { text_color },
+            if open || hovered {
+                accent()
+            } else {
+                text_color
+            },
         );
         if flip > 0.0 && flip < 1.0 {
             ui.ctx().request_repaint();

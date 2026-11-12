@@ -10,7 +10,7 @@ use crate::app::ai::text;
 use crate::app::local_stt::{self, LocalSession};
 use crate::app::models::{DictationEvent, DictationSource, DictationStream};
 use crate::app::provider_stt::{self, ProviderSession};
-use crate::app::theme::{ACCENT, ACCENT_TEXT};
+use crate::app::theme::{accent, accent_text};
 use eframe::egui;
 use egui::text::CCursorRange;
 use egui::text_edit::TextEditState;
@@ -550,16 +550,16 @@ impl NotepadApp {
         painter.rect_filled(
             rect,
             10.0,
-            egui::Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), 24),
+            egui::Color32::from_rgba_unmultiplied(accent().r(), accent().g(), accent().b(), 24),
         );
-        painter.rect_stroke(rect.shrink(1.0), 10.0, egui::Stroke::new(2.0_f32, ACCENT));
+        painter.rect_stroke(rect.shrink(1.0), 10.0, egui::Stroke::new(2.0_f32, accent()));
 
         let galley = painter.layout_no_wrap(
             String::from("Transcribe audio file"),
             egui::FontId::proportional(19.0),
-            ACCENT_TEXT,
+            accent_text(),
         );
-        painter.galley(rect.center() - galley.size() * 0.5, galley, ACCENT_TEXT);
+        painter.galley(rect.center() - galley.size() * 0.5, galley, accent_text());
     }
 
     /// Transcribe the first audio file dropped anywhere on the window.

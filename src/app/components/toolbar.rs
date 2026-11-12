@@ -1,5 +1,5 @@
 use crate::app::NotepadApp;
-use crate::app::theme::{ACCENT, ACCENT_HOVERED, ACCENT_TEXT, BORDER, SURFACE};
+use crate::app::theme::{BORDER, SURFACE, accent, accent_hovered, accent_text};
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -111,21 +111,21 @@ fn dictation_button(
     };
 
     let fill = if !interactive && !pulse {
-        ACCENT.gamma_multiply(0.4)
+        accent().gamma_multiply(0.4)
     } else if response.hovered() && interactive {
-        ACCENT_HOVERED
+        accent_hovered()
     } else if pulse {
-        mix_color(ACCENT, ACCENT_HOVERED, 0.1 + 0.35 * wave)
+        mix_color(accent(), accent_hovered(), 0.1 + 0.35 * wave)
     } else {
-        ACCENT
+        accent()
     };
 
     if pulse {
         let ring = rect.expand(1.0 + 2.5 * wave);
         let ring_color = egui::Color32::from_rgba_unmultiplied(
-            ACCENT_HOVERED.r(),
-            ACCENT_HOVERED.g(),
-            ACCENT_HOVERED.b(),
+            accent_hovered().r(),
+            accent_hovered().g(),
+            accent_hovered().b(),
             (110.0 * (1.0 - wave)) as u8,
         );
         ui.painter().rect_stroke(
@@ -141,9 +141,9 @@ fn dictation_button(
     match icon {
         Some(icon) => {
             let color = if interactive || pulse {
-                ACCENT_TEXT
+                accent_text()
             } else {
-                ACCENT_TEXT.gamma_multiply(0.55)
+                accent_text().gamma_multiply(0.55)
             };
             ui.painter().text(
                 rect.center(),
@@ -155,7 +155,7 @@ fn dictation_button(
         }
         None => {
             let spinner_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
-            ui.put(spinner_rect, egui::Spinner::new().color(ACCENT_TEXT));
+            ui.put(spinner_rect, egui::Spinner::new().color(accent_text()));
         }
     }
 
@@ -590,7 +590,7 @@ impl NotepadApp {
                                                 .inner_margin(egui::Margin::symmetric(8.0, 4.0))
                                                 .show(ui, |ui| {
                                                     ui.colored_label(
-                                                        ACCENT,
+                                                        accent(),
                                                         egui::RichText::new(format!(
                                                             "{:02}:{:02}",
                                                             secs / 60,
@@ -638,20 +638,23 @@ impl NotepadApp {
                         .add_enabled(
                             enabled,
                             egui::Button::new(
-                                egui::RichText::new(icon).size(16.0).color(ACCENT_TEXT),
+                                egui::RichText::new(icon).size(16.0).color(accent_text()),
                             )
-                            .fill(ACCENT)
+                            .fill(accent())
                             .min_size(egui::vec2(30.0, 28.0)),
                         )
                         .on_hover_text("Create a visual report from this document");
                     if self.html_busy {
-                        egui::Spinner::new().size(14.0).color(ACCENT_TEXT).paint_at(
-                            ui,
-                            egui::Rect::from_center_size(
-                                response.rect.center(),
-                                egui::vec2(14.0, 14.0),
-                            ),
-                        );
+                        egui::Spinner::new()
+                            .size(14.0)
+                            .color(accent_text())
+                            .paint_at(
+                                ui,
+                                egui::Rect::from_center_size(
+                                    response.rect.center(),
+                                    egui::vec2(14.0, 14.0),
+                                ),
+                            );
                     }
                     if response.clicked() {
                         self.generate_styled_html();

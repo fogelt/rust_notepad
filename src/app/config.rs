@@ -16,6 +16,10 @@ pub enum EditorFont {
     Monospace,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_editor_font_size() -> f32 {
     14.5
 }
@@ -47,6 +51,9 @@ pub struct UiSettings {
     pub preview_font_size: f32,
     #[serde(default = "default_preview_line_spacing")]
     pub preview_line_spacing: f32,
+    /// Follow the active provider's branding color for accent chrome.
+    #[serde(default = "default_true")]
+    pub use_provider_color: bool,
 }
 
 impl Default for UiSettings {
@@ -58,6 +65,7 @@ impl Default for UiSettings {
             preview_font: EditorFont::Sans,
             preview_font_size: default_preview_font_size(),
             preview_line_spacing: default_preview_line_spacing(),
+            use_provider_color: true,
         }
     }
 }
@@ -178,6 +186,7 @@ mod tests {
                 preview_font: EditorFont::Monospace,
                 preview_font_size: 18.0,
                 preview_line_spacing: 24.0,
+                use_provider_color: true,
             },
         };
         let json = serde_json::to_string(&cfg).unwrap();

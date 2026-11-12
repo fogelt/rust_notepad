@@ -1,6 +1,6 @@
 use crate::app::NotepadApp;
 use crate::app::models::Toast;
-use crate::app::theme::{ACCENT, BG_ELEVATED, TEXT};
+use crate::app::theme::{BG_ELEVATED, TEXT, accent};
 use eframe::egui;
 use egui_phosphor::regular as icons;
 use std::time::{Duration, Instant};
@@ -39,7 +39,7 @@ impl NotepadApp {
         let edge = if is_error {
             ctx.style().visuals.error_fg_color
         } else {
-            ACCENT
+            accent()
         };
         let icon = if is_error {
             icons::WARNING_CIRCLE
